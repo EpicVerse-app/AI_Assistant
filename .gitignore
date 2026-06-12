@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+
+# Virtual environment
+venv/
+env/
+.venv/
+
+# Environment / secrets
+.env
+backend/utils/.env
+
+# Audio uploads (do not commit recordings)
+backend/audio/
+backend/uploads/
+
+# Outputs
+backend/outputs/
+
+# macOS
+.DS_Store
+
+# IDE
+.cursor/
+*.swp
