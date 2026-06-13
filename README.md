@@ -1,21 +1,32 @@
-<<<<<<< HEAD
-# ai_assistant
+# AI Memory Assistant
 
-A new Flutter project.
+AI Memory Assistant with a Flutter mobile frontend and Python backend.
 
-## Getting Started
+## Project Structure
 
-This project is a starting point for a Flutter application.
+- `lib/` — Flutter app (login, home, record, search, settings, MoM)
+- `html/` — HTML prototype of the UI
+- `backend/` — Python API (transcription, summarization, translation)
 
-A few resources to get you started if this is your first Flutter project:
+## Flutter App
 
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
+```bash
+flutter pub get
+flutter run -d macos   # or chrome / ios
+```
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
-=======
-# AI_Assistant
->>>>>>> origin/main
+## HTML Prototype
+
+Open `html/index.html` in a browser, or run:
+
+```bash
+cd html && python3 -m http.server 8080
+```
+
+## Backend
+
+```bash
+cd backend
+pip install -r requirements.txt
+python app.py
+```
