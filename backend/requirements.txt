@@ -8,3 +8,4 @@ requests==2.34.2
 sounddevice==0.5.5
 numpy==2.4.6
 faster-whisper==1.2.1
+pydub

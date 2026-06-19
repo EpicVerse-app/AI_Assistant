@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>AI Memory Assistant</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app">
+
+    <!-- Login Screen -->
+    <section id="login-screen" class="screen login-screen active">
+      <div class="login-content">
+        <img src="logo.png" alt="AI Memory Assistant" class="app-logo">
+        <h2>AI Memory Assistant</h2>
+        <p class="subtitle">Sign in to continue</p>
+        <form id="login-form">
+          <div class="field">
+            <label for="login-email">Email</label>
+            <input type="email" id="login-email" placeholder="name@example.com" autocomplete="email">
+            <p id="email-error" class="error-text">Enter your email</p>
+          </div>
+          <div class="field">
+            <label for="login-password">Password</label>
+            <div class="password-wrap">
+              <input type="password" id="login-password" placeholder="Password" autocomplete="current-password">
+              <button type="button" id="toggle-password">Show</button>
+            </div>
+            <p id="password-error" class="error-text">Enter your password</p>
+          </div>
+          <div class="link-row">
+            <button type="button" class="link-btn">Forgot password?</button>
+          </div>
+          <button type="submit" class="btn-primary" id="login-btn">Login</button>
+        </form>
+        <div class="signup-row">
+          Don't have an account?
+          <button type="button" class="link-btn" id="go-signup">Create account</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Sign Up Screen -->
+    <section id="signup-screen" class="screen">
+      <header class="app-bar">
+        <button class="back-btn" id="signup-back" aria-label="Back">←</button>
+        <h1>Create account</h1>
+      </header>
+      <div class="content">
+        <form id="signup-form">
+          <div class="field">
+            <label for="signup-name">Full name</label>
+            <input type="text" id="signup-name" required>
+          </div>
+          <div class="field">
+            <label for="signup-email">Email</label>
+            <input type="email" id="signup-email" required>
+          </div>
+          <div class="field">
+            <label for="signup-password">Password</label>
+            <input type="password" id="signup-password" minlength="6" required>
+          </div>
+          <button type="submit" class="btn-primary">Create account</button>
+        </form>
+      </div>
+    </section>
+
+    <!-- Home Screen -->
+    <section id="home-screen" class="screen with-nav">
+      <header class="app-bar large">
+        <h1>AI Memory Assistant</h1>
+      </header>
+      <div class="content">
+        <div class="search-wrap">
+          <span class="icon">🔍</span>
+          <input type="text" class="search-input" id="home-search" placeholder="Search memories" readonly>
+        </div>
+        <button class="btn-primary icon-btn" id="new-meeting-btn">
+          <span>+</span> New Meeting
+        </button>
+      </div>
+    </section>
+
+    <!-- Record Screen -->
+    <section id="record-screen" class="screen record-screen with-nav">
+      <header class="app-bar">
+        <h1>Record</h1>
+      </header>
+      <div class="content">
+        <div class="timer" id="record-timer">00:00</div>
+        <p class="record-status" id="record-status">Ready to record</p>
+        <button class="mic-btn" id="mic-btn" aria-label="Record">🎤</button>
+        <p class="mic-hint" id="mic-hint">Tap to start</p>
+      </div>
+    </section>
+
+    <!-- Search Screen -->
+    <section id="search-screen" class="screen with-nav">
+      <header class="app-bar">
+        <h1>Search</h1>
+      </header>
+      <div class="content">
+        <div class="search-wrap">
+          <span class="icon">🔍</span>
+          <input type="text" class="search-input" id="search-input" placeholder="Search memories">
+          <button class="clear-btn" id="clear-search" aria-label="Clear">✕</button>
+        </div>
+        <div id="search-results"></div>
+      </div>
+    </section>
+
+    <!-- Settings Screen -->
+    <section id="settings-screen" class="screen with-nav">
+      <header class="app-bar">
+        <h1>Settings</h1>
+      </header>
+      <div class="content" style="padding:0;">
+        <div class="settings-profile">
+          <div class="avatar">A</div>
+          <div class="info">
+            <h3>Alex</h3>
+            <p>alex@example.com</p>
+          </div>
+        </div>
+        <div class="section-label">Preferences</div>
+        <ul class="settings-list">
+          <li class="settings-item">
+            <span>Notifications</span>
+            <label class="toggle">
+              <input type="checkbox" checked>
+              <span class="toggle-slider"></span>
+            </label>
+          </li>
+          <li class="settings-item">
+            <span>Auto-summarize recordings</span>
+            <label class="toggle">
+              <input type="checkbox" checked>
+              <span class="toggle-slider"></span>
+            </label>
+          </li>
+          <li class="settings-item">
+            <span>Save transcripts</span>
+            <label class="toggle">
+              <input type="checkbox" checked>
+              <span class="toggle-slider"></span>
+            </label>
+          </li>
+        </ul>
+        <button class="logout-btn" id="logout-btn">Logout</button>
+      </div>
+    </section>
+
+    <!-- Processing Screen -->
+    <section id="processing-screen" class="screen">
+      <header class="app-bar">
+        <h1>Processing</h1>
+      </header>
+      <div class="content" style="justify-content:center;align-items:center;display:flex;flex-direction:column;gap:24px;padding:40px 24px;">
+        <div class="spinner"></div>
+        <div id="processing-steps" style="width:100%;max-width:300px;">
+          <div class="step-row" id="step-transcribing">
+            <span class="step-icon pending">○</span>
+            <span class="step-label">Transcribing audio</span>
+          </div>
+          <div class="step-row" id="step-translating">
+            <span class="step-icon pending">○</span>
+            <span class="step-label">Translating to English</span>
+          </div>
+          <div class="step-row" id="step-generating">
+            <span class="step-icon pending">○</span>
+            <span class="step-label">Generating meeting minutes</span>
+          </div>
+          <div class="step-row" id="step-done">
+            <span class="step-icon pending">○</span>
+            <span class="step-label">Done</span>
+          </div>
+        </div>
+        <p id="processing-error" style="color:#ff3b30;text-align:center;display:none;"></p>
+        <button class="btn-primary" id="processing-cancel" style="display:none;max-width:200px;">Go Back</button>
+      </div>
+    </section>
+
+    <!-- MoM Result Screen -->
+    <section id="result-screen" class="screen">
+      <header class="app-bar">
+        <button class="back-btn" id="result-back" aria-label="Back">←</button>
+        <h1>Meeting Minutes</h1>
+        <button class="icon-action-btn" id="copy-mom-btn" title="Copy">⎘</button>
+      </header>
+      <div class="content" id="result-content" style="padding:16px;"></div>
+    </section>
+      <header class="app-bar">
+        <button class="back-btn" id="detail-back" aria-label="Back">←</button>
+        <h1>MoM</h1>
+      </header>
+      <div class="content" id="mom-content">
+        <p class="mom-label">Minutes of Meeting</p>
+        <div id="mom-fields"></div>
+        <button class="logout-btn" id="delete-mom-btn" style="margin-top:8px;">Delete</button>
+      </div>
+    </section>
+
+    <!-- Bottom Navigation -->
+    <nav id="bottom-nav" class="bottom-nav hidden">
+      <button class="nav-item active" data-tab="home">
+        <span class="icon">🏠</span>
+        <span>Home</span>
+      </button>
+      <button class="nav-item" data-tab="record">
+        <span class="icon">🎤</span>
+        <span>Record</span>
+      </button>
+      <button class="nav-item" data-tab="search">
+        <span class="icon">🔍</span>
+        <span>Search</span>
+      </button>
+      <button class="nav-item" data-tab="settings">
+        <span class="icon">⚙️</span>
+        <span>Settings</span>
+      </button>
+    </nav>
+
+    <div id="snackbar" class="snackbar"></div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

@@ -1,9 +1,11 @@
 import argparse
+import io
 import os
 from dataclasses import dataclass
 from pathlib import Path
 
 import requests
+from pydub import AudioSegment
 
 SARVAM_API_URL = "https://api.sarvam.ai/speech-to-text"
 SARVAM_API_KEY = os.environ.get("SARVAM_API_KEY", "sk_nkz538vv_VCZFn21xyI6P1Oxo0v8QnsKH")
@@ -16,17 +18,27 @@ class TranscriptionResult:
     transcript: str
 
 
+def _to_wav_bytes(audio_path: Path) -> bytes:
+    """Convert any audio file to 16 kHz mono 16-bit WAV in memory via ffmpeg."""
+    audio = AudioSegment.from_file(str(audio_path))
+    audio = audio.set_frame_rate(16000).set_channels(1).set_sample_width(2)
+    buf = io.BytesIO()
+    audio.export(buf, format="wav")
+    return buf.getvalue()
+
+
 def transcribe_audio(audio_path: Path, print_output: bool = True) -> TranscriptionResult:
     if not audio_path.is_file():
         raise FileNotFoundError(f"Audio file not found: {audio_path}")
 
-    with open(audio_path, "rb") as audio_file:
-        response = requests.post(
-            SARVAM_API_URL,
-            headers={"api-subscription-key": SARVAM_API_KEY},
-            files={"file": (audio_path.name, audio_file, "audio/mpeg")},
-            data={"language_code": "unknown", "model": "saarika:v2.5"},
-        )
+    wav_bytes = _to_wav_bytes(audio_path)
+
+    response = requests.post(
+        SARVAM_API_URL,
+        headers={"api-subscription-key": SARVAM_API_KEY},
+        files={"file": ("audio.wav", wav_bytes, "audio/wav")},
+        data={"language_code": "unknown", "model": "saarika:v2.5"},
+    )
 
     if not response.ok:
         raise RuntimeError(

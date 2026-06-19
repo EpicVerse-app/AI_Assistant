@@ -26,7 +26,12 @@ migrate_working_dir/
 .pub-cache/
 .pub/
 /build/
+**/build/
 /coverage/
+
+# iOS/macOS CocoaPods
+**/ios/Pods/
+**/macos/Pods/
 
 # Symbolication related
 app.*.symbols

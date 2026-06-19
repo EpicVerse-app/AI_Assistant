@@ -1,16 +1,38 @@
 import os
+
+import requests
 from dotenv import load_dotenv
-from openai import OpenAI
 
 load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), "../utils/.env"))
 
-_client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
+SARVAM_API_KEY = os.environ.get("SARVAM_API_KEY", "")
+SARVAM_TRANSLATE_URL = "https://api.sarvam.ai/translate"
 
-LANGUAGE_NAMES = {
-    "hi-IN": "Hindi", "ta-IN": "Tamil", "te-IN": "Telugu",
-    "ml-IN": "Malayalam", "kn-IN": "Kannada", "bn-IN": "Bengali",
-    "gu-IN": "Gujarati", "mr-IN": "Marathi", "pa-IN": "Punjabi",
-    "od-IN": "Odia", "en-IN": "English", "unknown": "the source language",
+# Maps language codes from STT → BCP-47 for Sarvam translate API
+LANGUAGE_MAP = {
+    "hi": "hi-IN",
+    "hi-IN": "hi-IN",
+    "ta": "ta-IN",
+    "ta-IN": "ta-IN",
+    "te": "te-IN",
+    "te-IN": "te-IN",
+    "ml": "ml-IN",
+    "ml-IN": "ml-IN",
+    "kn": "kn-IN",
+    "kn-IN": "kn-IN",
+    "bn": "bn-IN",
+    "bn-IN": "bn-IN",
+    "gu": "gu-IN",
+    "gu-IN": "gu-IN",
+    "mr": "mr-IN",
+    "mr-IN": "mr-IN",
+    "pa": "pa-IN",
+    "pa-IN": "pa-IN",
+    "od": "od-IN",
+    "od-IN": "od-IN",
+    "en": "en-IN",
+    "en-IN": "en-IN",
+    "unknown": "unknown",
 }
 
 
@@ -19,24 +41,26 @@ def translate_to_english(text: str, source_language: str = "unknown") -> str:
     if not text:
         return ""
 
-    lang_name = LANGUAGE_NAMES.get(source_language, source_language)
-
-    if source_language in ("en-IN", "en"):
+    source_bcp47 = LANGUAGE_MAP.get(source_language, source_language)
+    if source_bcp47 in ("en-IN", "en", "unknown"):
         return text
 
-    response = _client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=[
-            {
-                "role": "system",
-                "content": (
-                    f"You are a professional translator. "
-                    f"Translate the following {lang_name} text to English accurately. "
-                    "Preserve the meaning, tone, and structure. Return only the translation."
-                ),
-            },
-            {"role": "user", "content": text},
-        ],
-        temperature=0.2,
+    response = requests.post(
+        SARVAM_TRANSLATE_URL,
+        headers={
+            "api-subscription-key": SARVAM_API_KEY,
+            "Content-Type": "application/json",
+        },
+        json={
+            "input": text,
+            "source_language_code": source_bcp47,
+            "target_language_code": "en-IN",
+            "model": "mayura:v1",
+        },
+        timeout=120,
     )
-    return response.choices[0].message.content.strip()
+    if not response.ok:
+        raise RuntimeError(
+            f"Sarvam translate error {response.status_code}: {response.text}"
+        )
+    return response.json().get("translated_text", "").strip() or text
