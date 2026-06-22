@@ -1,0 +1,17 @@
+# Render Blueprint — https://render.com/docs/infrastructure-as-code
+# Connect repo at: Dashboard → New → Blueprint → select this repo
+services:
+  - type: web
+    name: ai-assistant-api
+    runtime: docker
+    rootDir: backend
+    dockerfilePath: ./Dockerfile
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: SARVAM_API_KEY
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: PYTHONUNBUFFERED
+        value: "1"

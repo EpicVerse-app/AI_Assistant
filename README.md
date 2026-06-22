@@ -111,6 +111,25 @@ python -m services.realtime_transcriber
 
 Requires microphone access and `SARVAM_API_KEY` in `.env`.
 
+## Deploy backend to Render (free tier)
+
+1. Push this repo to GitHub (already configured for `EpicVerse-app/AI_Assistant`).
+2. Open [Render Dashboard](https://dashboard.render.com/) → **New** → **Blueprint**.
+3. Connect the GitHub repo and apply `render.yaml`.
+4. Set environment variables when prompted:
+   - `SARVAM_API_KEY` (required)
+   - `OPENAI_API_KEY` (required for MoM; optional if using Ollama locally only)
+5. After deploy, copy your service URL (e.g. `https://ai-assistant-api.onrender.com`).
+6. Update the Flutter app API URL in `frontend/lib/services/api_service.dart`:
+   ```dart
+   static const String baseUrl = 'https://your-service.onrender.com';
+   ```
+
+**Notes:**
+- Free tier sleeps after ~15 minutes idle; first request may take 30–60s to wake.
+- Disk is **ephemeral** on free tier — SQLite DB and uploads reset on redeploy. Use a paid persistent disk for production.
+- Health check: `GET /health`
+
 ## Development notes
 
 - Login/signup in the Flutter app is **UI-only** (no backend auth yet).

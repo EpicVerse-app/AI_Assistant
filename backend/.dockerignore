@@ -1,0 +1,11 @@
+venv/
+.venv/
+__pycache__/
+*.py[cod]
+*.db
+uploads/
+outputs/
+audio/
+utils/.env
+.git/
+.gitignore
