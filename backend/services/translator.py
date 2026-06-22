@@ -1,11 +1,7 @@
-import os
-
 import requests
-from dotenv import load_dotenv
 
-load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), "../utils/.env"))
+from utils.sarvam_config import get_sarvam_api_key
 
-SARVAM_API_KEY = os.environ.get("SARVAM_API_KEY", "")
 SARVAM_TRANSLATE_URL = "https://api.sarvam.ai/translate"
 
 # Maps language codes from STT → BCP-47 for Sarvam translate API
@@ -48,7 +44,7 @@ def translate_to_english(text: str, source_language: str = "unknown") -> str:
     response = requests.post(
         SARVAM_TRANSLATE_URL,
         headers={
-            "api-subscription-key": SARVAM_API_KEY,
+            "api-subscription-key": get_sarvam_api_key(),
             "Content-Type": "application/json",
         },
         json={

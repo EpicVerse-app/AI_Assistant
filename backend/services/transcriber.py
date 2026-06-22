@@ -1,14 +1,14 @@
 import argparse
 import io
-import os
 from dataclasses import dataclass
 from pathlib import Path
 
 import requests
 from pydub import AudioSegment
 
+from utils.sarvam_config import get_sarvam_api_key
+
 SARVAM_API_URL = "https://api.sarvam.ai/speech-to-text"
-SARVAM_API_KEY = os.environ.get("SARVAM_API_KEY", "sk_nkz538vv_VCZFn21xyI6P1Oxo0v8QnsKH")
 
 
 @dataclass
@@ -35,7 +35,7 @@ def transcribe_audio(audio_path: Path, print_output: bool = True) -> Transcripti
 
     response = requests.post(
         SARVAM_API_URL,
-        headers={"api-subscription-key": SARVAM_API_KEY},
+        headers={"api-subscription-key": get_sarvam_api_key()},
         files={"file": ("audio.wav", wav_bytes, "audio/wav")},
         data={"language_code": "unknown", "model": "saarika:v2.5"},
     )

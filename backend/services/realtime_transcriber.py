@@ -7,7 +7,6 @@ Press Ctrl+C to stop.
 
 import io
 import json
-import os
 import sys
 import wave
 from datetime import datetime
@@ -16,6 +15,8 @@ from urllib.request import Request, urlopen
 import numpy as np
 import requests
 import sounddevice as sd
+
+from utils.sarvam_config import get_sarvam_api_key
 
 # ── Terminal colour helpers ──────────────────────────────────────────────────
 _USE_COLOR = sys.stdout.isatty()
@@ -39,7 +40,6 @@ def _header(text: str) -> None:
 def _result(label: str, text: str) -> None:
     print(f"  {_c('33', label + ':')}  {text}")
 
-SARVAM_API_KEY = os.environ.get("SARVAM_API_KEY", "sk_nkz538vv_VCZFn21xyI6P1Oxo0v8QnsKH")
 SARVAM_STT_URL = "https://api.sarvam.ai/speech-to-text"
 SARVAM_TRANSLATE_URL = "https://api.sarvam.ai/translate"
 
@@ -81,7 +81,7 @@ def transcribe_chunk(audio: np.ndarray) -> tuple[str, str]:
     wav_bytes = audio_to_wav_bytes(audio)
     response = requests.post(
         SARVAM_STT_URL,
-        headers={"api-subscription-key": SARVAM_API_KEY},
+        headers={"api-subscription-key": get_sarvam_api_key()},
         files={"file": ("chunk.wav", wav_bytes, "audio/wav")},
         data={"language_code": "unknown", "model": "saarika:v2.5"},
     )
@@ -99,7 +99,7 @@ def translate_to_english(text: str, source_lang: str) -> str:
     response = requests.post(
         SARVAM_TRANSLATE_URL,
         headers={
-            "api-subscription-key": SARVAM_API_KEY,
+            "api-subscription-key": get_sarvam_api_key(),
             "Content-Type": "application/json",
         },
         json={
@@ -168,7 +168,7 @@ def main() -> None:
             wav_buf = io.BytesIO(wav_bytes)
             response = requests.post(
                 SARVAM_STT_URL,
-                headers={"api-subscription-key": SARVAM_API_KEY},
+                headers={"api-subscription-key": get_sarvam_api_key()},
                 files={"file": ("chunk.wav", wav_buf, "audio/wav")},
                 data={"language_code": "unknown", "model": "saarika:v2.5"},
             )
@@ -196,7 +196,7 @@ def main() -> None:
                 trans_resp = requests.post(
                     SARVAM_TRANSLATE_URL,
                     headers={
-                        "api-subscription-key": SARVAM_API_KEY,
+                        "api-subscription-key": get_sarvam_api_key(),
                         "Content-Type": "application/json",
                     },
                     json={
