@@ -30,6 +30,14 @@ def save_translation(meeting_id: str, text: str) -> Path:
     return file_path
 
 
+def save_diarized_transcript(meeting_id: str, text: str) -> Path:
+    folder = meeting_dir(meeting_id)
+    file_path = folder / "diarized_transcript.txt"
+    file_path.write_text(text, encoding="utf-8")
+    _update_metadata(meeting_id, diarized_transcript_path=str(file_path))
+    return file_path
+
+
 def save_mom(meeting_id: str, mom_data: dict[str, Any], markdown: str) -> tuple[Path, Path]:
     folder = meeting_dir(meeting_id)
     json_path = folder / "mom.json"
@@ -89,7 +97,23 @@ def _update_metadata(meeting_id: str, **fields: Any) -> None:
     meta_path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
 
 
+def _render_section_body(body: str) -> str:
+    text = str(body).strip() or "Not mentioned"
+    if text == "Not mentioned":
+        return text
+    if "\n" in text or text.startswith("- "):
+        return text
+    return f"- {text}"
+
+
 def mom_to_markdown(mom: dict[str, Any]) -> str:
+    bullet_sections = {
+        "Summary",
+        "Decisions",
+        "Action Items",
+        "Deadlines",
+        "Important Notes",
+    }
     sections = [
         ("Meeting Date", mom.get("meeting_date", "Not mentioned")),
         ("Meeting Topic", mom.get("meeting_topic", "Not mentioned")),
@@ -103,6 +127,7 @@ def mom_to_markdown(mom: dict[str, Any]) -> str:
     lines: list[str] = ["# Meeting Minutes", ""]
     for title, body in sections:
         lines.append(f"## {title}")
-        lines.append(str(body).strip() or "Not mentioned")
+        content = _render_section_body(body) if title in bullet_sections else str(body).strip()
+        lines.append(content or "Not mentioned")
         lines.append("")
     return "\n".join(lines).strip()

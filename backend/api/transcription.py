@@ -231,6 +231,10 @@ def get_meeting_detail(meeting_id: str, db: Session = Depends(get_db)):
     if summary is None and meeting.mom_path and Path(meeting.mom_path).exists():
         summary = Path(meeting.mom_path).read_text(encoding="utf-8").strip()
 
+    if mom and meeting.meeting_date:
+        if not mom.get("meeting_date") or mom.get("meeting_date") == "Not mentioned":
+            mom = {**mom, "meeting_date": meeting.meeting_date}
+
     return {
         "meeting_id": meeting.meeting_id,
         "status": meeting.status,

@@ -87,10 +87,19 @@ class _MomResultScreenState extends State<MomResultScreen> {
       'important_notes': 'Important Notes',
     };
 
+    const bulletSections = {
+      'summary',
+      'decisions',
+      'action_items',
+      'deadlines',
+      'important_notes',
+    };
+
     return sections.entries.map((entry) {
       final label = labels[entry.key] ??
           entry.key.replaceAll('_', ' ').split(' ').map((w) =>
               w.isEmpty ? w : '${w[0].toUpperCase()}${w.substring(1)}').join(' ');
+      final value = entry.value.isNotEmpty ? entry.value : 'Not mentioned';
       return Padding(
         padding: const EdgeInsets.only(bottom: 12),
         child: Column(
@@ -106,7 +115,9 @@ class _MomResultScreenState extends State<MomResultScreen> {
               ),
             ),
             const SizedBox(height: 6),
-            _TextBlock(entry.value.isNotEmpty ? entry.value : 'Not mentioned'),
+            bulletSections.contains(entry.key)
+                ? _BulletBlock(value)
+                : _TextBlock(value),
           ],
         ),
       );
@@ -179,11 +190,11 @@ class _MomResultScreenState extends State<MomResultScreen> {
           ),
           const SizedBox(height: 20),
 
-          // Transcript section
+          // Transcript section — conversational format (Speaker: dialogue)
           if (meeting.transcript != null && meeting.transcript!.isNotEmpty) ...[
-            const _SectionLabel('Original Transcript'),
+            const _SectionLabel('Conversation Transcript'),
             const SizedBox(height: 8),
-            _TextBlock(meeting.transcript!),
+            _ConversationBlock(meeting.transcript!),
             const SizedBox(height: 20),
           ],
 
@@ -254,6 +265,140 @@ class _SectionLabel extends StatelessWidget {
         fontWeight: FontWeight.w700,
         letterSpacing: 0.8,
         color: AppTheme.secondaryGray,
+      ),
+    );
+  }
+}
+
+class _ConversationBlock extends StatelessWidget {
+  const _ConversationBlock(this.text);
+  final String text;
+
+  List<MapEntry<String, String>> _turns() {
+    final turns = <MapEntry<String, String>>[];
+    final blocks = text.split(RegExp(r'\n\s*\n'));
+
+    for (final block in blocks) {
+      final trimmed = block.trim();
+      if (trimmed.isEmpty) continue;
+
+      final colonIndex = trimmed.indexOf(': ');
+      if (colonIndex > 0) {
+        turns.add(MapEntry(
+          trimmed.substring(0, colonIndex).trim(),
+          trimmed.substring(colonIndex + 2).trim(),
+        ));
+      } else {
+        turns.add(MapEntry('Speaker', trimmed));
+      }
+    }
+
+    if (turns.isEmpty && text.trim().isNotEmpty) {
+      turns.add(MapEntry('Speaker', text.trim()));
+    }
+    return turns;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final turns = _turns();
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppTheme.fillGray,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: turns.map((turn) {
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  turn.key,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    color: AppTheme.accentBlue,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  turn.value,
+                  style: const TextStyle(
+                    fontSize: 15,
+                    height: 1.6,
+                    color: AppTheme.primaryBlack,
+                  ),
+                ),
+              ],
+            ),
+          );
+        }).toList(),
+      ),
+    );
+  }
+}
+
+class _BulletBlock extends StatelessWidget {
+  const _BulletBlock(this.text);
+  final String text;
+
+  List<String> _lines() {
+    if (text.trim().isEmpty || text.trim().toLowerCase() == 'not mentioned') {
+      return const ['Not mentioned'];
+    }
+    return text
+        .split('\n')
+        .map((line) => line.trim())
+        .where((line) => line.isNotEmpty)
+        .map((line) => line.startsWith('- ') ? line.substring(2).trim() : line)
+        .toList();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final items = _lines();
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppTheme.fillGray,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: items.map((item) {
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 10),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  '•  ',
+                  style: TextStyle(
+                    fontSize: 15,
+                    height: 1.6,
+                    color: AppTheme.primaryBlack,
+                  ),
+                ),
+                Expanded(
+                  child: Text(
+                    item,
+                    style: const TextStyle(
+                      fontSize: 15,
+                      height: 1.6,
+                      color: AppTheme.primaryBlack,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          );
+        }).toList(),
       ),
     );
   }

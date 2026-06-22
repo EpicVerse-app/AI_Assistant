@@ -5,6 +5,7 @@ openai==2.41.1
 python-dotenv==1.2.2
 python-multipart==0.0.32
 requests==2.34.2
+sarvamai>=0.1.28
 sounddevice==0.5.5
 numpy==2.4.6
 faster-whisper==1.2.1

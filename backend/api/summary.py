@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from database.db import get_db
 from database.models import Meeting
 from services.meeting_storage import load_mom_json, load_mom_markdown, mom_to_markdown, save_mom
-from services.summarizer import generate_mom_structured, generate_summary
+from services.summarizer import generate_mom_structured, generate_summary, extract_speaker_names
 
 router = APIRouter(prefix="/summary", tags=["Summary"])
 
@@ -31,7 +31,14 @@ def create_summary(meeting_id: str, body: SummaryRequest, db: Session = Depends(
         raise HTTPException(status_code=400, detail="Transcript is empty — no speech was detected in the audio.")
 
     if body.type == "meeting":
-        mom_data = generate_mom_structured(text)
+        speaker_names = extract_speaker_names(text)
+        recorded_at = meeting.created_at
+        mom_data = generate_mom_structured(
+            text,
+            recorded_at=recorded_at,
+            speaker_names=speaker_names,
+        )
+        mom_data["meeting_date"] = meeting.meeting_date or mom_data.get("meeting_date")
         markdown = mom_to_markdown(mom_data)
         _, mom_md_path = save_mom(meeting_id, mom_data, markdown)
         meeting.mom_path = str(mom_md_path)
