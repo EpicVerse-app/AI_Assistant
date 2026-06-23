@@ -77,6 +77,57 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  Future<void> _confirmDeleteMeeting(Map<String, dynamic> m) async {
+    final meetingId = m['meeting_id'] as String;
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete meeting?'),
+        content: const Text(
+          'This removes the transcript and meeting minutes from the server. '
+          'Your audio recording saved on this device will be kept.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text(
+              'Delete',
+              style: TextStyle(color: AppTheme.priorityHigh),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true || !mounted) return;
+
+    try {
+      await ApiService.deleteMeeting(meetingId);
+      if (mounted) {
+        setState(() {
+          _meetings.removeWhere((item) => item['meeting_id'] == meetingId);
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Meeting deleted. Audio is still saved on this device.',
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to delete meeting: $e')),
+        );
+      }
+    }
+  }
+
   Future<void> _openMeeting(Map<String, dynamic> m) async {
     showDialog<void>(
       context: context,
@@ -251,6 +302,7 @@ class _HomeScreenState extends State<HomeScreen> {
               ...(_meetings.map((m) => _MeetingCard(
                     meeting: m,
                     onTap: () => _openMeeting(m),
+                    onDelete: () => _confirmDeleteMeeting(m),
                   ))),
           ],
         ),
@@ -260,10 +312,15 @@ class _HomeScreenState extends State<HomeScreen> {
 }
 
 class _MeetingCard extends StatelessWidget {
-  const _MeetingCard({required this.meeting, required this.onTap});
+  const _MeetingCard({
+    required this.meeting,
+    required this.onTap,
+    required this.onDelete,
+  });
 
   final Map<String, dynamic> meeting;
   final VoidCallback onTap;
+  final VoidCallback onDelete;
 
   String _formatDate(String? isoDate) {
     if (isoDate == null) return 'Unknown date';
@@ -326,6 +383,14 @@ class _MeetingCard extends StatelessWidget {
                   ),
                 ),
                 _StatusBadge(status: status),
+                IconButton(
+                  onPressed: onDelete,
+                  icon: const Icon(Icons.delete_outline,
+                      size: 20, color: AppTheme.secondaryGray),
+                  tooltip: 'Delete meeting',
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                ),
               ],
             ),
 

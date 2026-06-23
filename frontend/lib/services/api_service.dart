@@ -6,7 +6,7 @@ import 'package:http/http.dart' as http;
 import '../models/meeting.dart';
 
 class ApiService {
-  static const String baseUrl = 'http://localhost:8000';
+  static const String baseUrl = 'https://ai-assistant-api-9xhb.onrender.com';
   static const Duration _timeout = Duration(seconds: 120);
 
   // Upload audio file → returns meeting_id
@@ -99,6 +99,16 @@ class ApiService {
     return data['summary'] as String? ?? '';
   }
 
+  // Delete meeting (transcript + MoM; server audio kept; local audio untouched)
+  static Future<void> deleteMeeting(String meetingId) async {
+    final uri = Uri.parse('$baseUrl/transcription/$meetingId');
+    final response = await http.delete(uri).timeout(_timeout);
+
+    if (response.statusCode != 200) {
+      throw Exception('Delete meeting failed: ${response.body}');
+    }
+  }
+
   // Delete audio file from server
   static Future<void> deleteAudio(String meetingId) async {
     final uri = Uri.parse('$baseUrl/transcription/$meetingId/audio');
@@ -136,14 +146,30 @@ class ApiService {
     );
   }
 
-  // Check if backend is reachable
-  static Future<bool> isReachable() async {
+  // Check if backend is reachable (Render free tier may take 30–60s to wake).
+  static Future<bool> isReachable({
+    Duration timeout = const Duration(seconds: 60),
+  }) async {
     try {
       final uri = Uri.parse('$baseUrl/health');
-      final response = await http.get(uri).timeout(const Duration(seconds: 5));
+      final response = await http.get(uri).timeout(timeout);
       return response.statusCode == 200;
     } catch (_) {
       return false;
     }
+  }
+
+  static String audioPlayUrl(String meetingId) =>
+      '$baseUrl/transcription/$meetingId/audio/play';
+
+  static Future<Map<String, dynamic>?> getAudioInfo(String meetingId) async {
+    try {
+      final uri = Uri.parse('$baseUrl/transcription/$meetingId/audio/info');
+      final response = await http.get(uri).timeout(_timeout);
+      if (response.statusCode == 200) {
+        return jsonDecode(response.body) as Map<String, dynamic>;
+      }
+    } catch (_) {}
+    return null;
   }
 }

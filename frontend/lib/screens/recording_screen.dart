@@ -6,10 +6,13 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:record/record.dart';
+import 'package:just_audio/just_audio.dart';
 
 import '../services/api_service.dart';
+import '../services/local_audio_storage.dart';
 import '../services/offline_queue.dart';
 import '../theme/app_theme.dart';
+import '../utils/mom_parser.dart';
 import 'processing_screen.dart';
 
 class RecordingScreen extends StatefulWidget {
@@ -21,8 +24,10 @@ class RecordingScreen extends StatefulWidget {
 
 class _RecordingScreenState extends State<RecordingScreen> {
   final AudioRecorder _recorder = AudioRecorder();
+  final AudioPlayer _previewPlayer = AudioPlayer();
   bool _isRecording = false;
   bool _isLoading = false;
+  bool _previewPlaying = false;
   final Stopwatch _stopwatch = Stopwatch();
   Timer? _timer;
   Duration _elapsed = Duration.zero;
@@ -32,11 +37,24 @@ class _RecordingScreenState extends State<RecordingScreen> {
   void dispose() {
     _timer?.cancel();
     _stopwatch.stop();
+    _previewPlayer.dispose();
     _recorder.dispose();
     super.dispose();
   }
 
+  Future<bool> _hasNetwork() async {
+    final results = await Connectivity().checkConnectivity();
+    return results.isNotEmpty &&
+        !results.every((r) => r == ConnectivityResult.none);
+  }
+
   Future<void> _startRecording() async {
+    await _previewPlayer.stop();
+    setState(() {
+      _previewPlaying = false;
+      _recordedPath = null;
+    });
+
     final hasPermission = await _recorder.hasPermission();
     if (!hasPermission) {
       if (mounted) {
@@ -69,24 +87,56 @@ class _RecordingScreenState extends State<RecordingScreen> {
     });
   }
 
-  Future<void> _stopAndProcess() async {
+  Future<void> _stopRecording() async {
     _stopwatch.stop();
     _timer?.cancel();
 
     final path = await _recorder.stop();
-
-    // Give the OS a moment to finish flushing the file to disk.
     await Future.delayed(const Duration(milliseconds: 400));
+
+    if (!mounted) return;
 
     setState(() {
       _isRecording = false;
-      _isLoading = true;
+      _recordedPath = path;
+      _elapsed = _stopwatch.elapsed;
     });
 
-    if (path == null) {
-      setState(() => _isLoading = false);
-      return;
+    if (path != null) {
+      try {
+        await _previewPlayer.setFilePath(path);
+      } catch (_) {}
     }
+  }
+
+  Future<void> _togglePreview() async {
+    if (_recordedPath == null) return;
+    if (_previewPlayer.playing) {
+      await _previewPlayer.pause();
+    } else {
+      await _previewPlayer.play();
+    }
+    if (mounted) setState(() => _previewPlaying = _previewPlayer.playing);
+  }
+
+  Future<void> _discardRecording() async {
+    await _previewPlayer.stop();
+    setState(() {
+      _recordedPath = null;
+      _previewPlaying = false;
+      _elapsed = Duration.zero;
+    });
+  }
+
+  Future<void> _uploadAndProcess() async {
+    final path = _recordedPath;
+    if (path == null) return;
+
+    await _previewPlayer.stop();
+    setState(() {
+      _previewPlaying = false;
+      _isLoading = true;
+    });
 
     final audioFile = File(path);
     if (!audioFile.existsSync() || audioFile.lengthSync() == 0) {
@@ -98,9 +148,7 @@ class _RecordingScreenState extends State<RecordingScreen> {
       }
       return;
     }
-    final connectivityResult = await Connectivity().checkConnectivity();
-    final isOnline = connectivityResult != ConnectivityResult.none &&
-        await ApiService.isReachable();
+    final isOnline = await _hasNetwork() && await ApiService.isReachable();
 
     if (!isOnline) {
       await OfflineQueue.add(path);
@@ -111,7 +159,8 @@ class _RecordingScreenState extends State<RecordingScreen> {
           builder: (ctx) => AlertDialog(
             title: const Text('Saved for later'),
             content: const Text(
-              'You are offline. The recording has been saved and will be processed automatically when you reconnect.',
+              'Could not reach the server (it may be waking up on Render — try again in a minute). '
+              'Your recording is saved and will upload when you tap Sync on the home screen.',
             ),
             actions: [
               TextButton(
@@ -127,6 +176,11 @@ class _RecordingScreenState extends State<RecordingScreen> {
 
     try {
       final meetingId = await ApiService.uploadAudio(audioFile);
+      await LocalAudioStorage.saveForMeeting(
+        meetingId,
+        path,
+        durationSeconds: _elapsed.inSeconds,
+      );
       if (mounted) {
         setState(() => _isLoading = false);
         Navigator.of(context).push(
@@ -167,16 +221,18 @@ class _RecordingScreenState extends State<RecordingScreen> {
 
     setState(() => _isLoading = true);
 
-    final connectivityResult = await Connectivity().checkConnectivity();
-    final isOnline = connectivityResult != ConnectivityResult.none &&
-        await ApiService.isReachable();
+    final isOnline = await _hasNetwork() && await ApiService.isReachable();
 
     if (!isOnline) {
       await OfflineQueue.add(pickedFile.path);
       setState(() => _isLoading = false);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Offline — file saved and will upload when reconnected.')),
+          const SnackBar(
+            content: Text(
+              'Could not reach the server — file saved. Tap Sync on the home screen to retry.',
+            ),
+          ),
         );
       }
       return;
@@ -184,6 +240,7 @@ class _RecordingScreenState extends State<RecordingScreen> {
 
     try {
       final meetingId = await ApiService.uploadAudio(pickedFile);
+      await LocalAudioStorage.saveForMeeting(meetingId, pickedFile.path);
       if (mounted) {
         setState(() => _isLoading = false);
         Navigator.of(context).push(
@@ -265,7 +322,9 @@ class _RecordingScreenState extends State<RecordingScreen> {
                     ],
                     const SizedBox(height: 56),
                     GestureDetector(
-                      onTap: _isRecording ? _stopAndProcess : _startRecording,
+                      onTap: _isRecording
+                          ? _stopRecording
+                          : (_recordedPath == null ? _startRecording : null),
                       child: AnimatedContainer(
                         duration: const Duration(milliseconds: 200),
                         width: 88,
@@ -287,14 +346,78 @@ class _RecordingScreenState extends State<RecordingScreen> {
                     ),
                     const SizedBox(height: 16),
                     Text(
-                      _isRecording ? 'Tap to stop & process' : 'Tap to start',
+                      _isRecording
+                          ? 'Tap to stop'
+                          : (_recordedPath != null
+                              ? 'Review your recording below'
+                              : 'Tap to start'),
                       style: const TextStyle(
                         fontSize: 14,
                         color: AppTheme.secondaryGray,
                       ),
                     ),
 
-                    if (!_isRecording) ...[
+                    if (_recordedPath != null && !_isRecording) ...[
+                      const SizedBox(height: 32),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(20),
+                        decoration: AppTheme.cardDecoration,
+                        child: Column(
+                          children: [
+                            GestureDetector(
+                              onTap: _togglePreview,
+                              child: Container(
+                                width: 56,
+                                height: 56,
+                                decoration: const BoxDecoration(
+                                  color: AppTheme.primaryPurple,
+                                  shape: BoxShape.circle,
+                                ),
+                                child: Icon(
+                                  _previewPlaying
+                                      ? Icons.pause
+                                      : Icons.play_arrow,
+                                  color: Colors.white,
+                                  size: 28,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            const Text(
+                              'Recording saved',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              'Duration: ${MomParser.formatDuration(_elapsed.inSeconds)}',
+                              style: const TextStyle(
+                                color: AppTheme.secondaryGray,
+                              ),
+                            ),
+                            const SizedBox(height: 20),
+                            FilledButton(
+                              onPressed: _uploadAndProcess,
+                              style: FilledButton.styleFrom(
+                                minimumSize: const Size(double.infinity, 48),
+                                backgroundColor: AppTheme.primaryPurple,
+                              ),
+                              child: const Text('Upload & Generate MoM'),
+                            ),
+                            const SizedBox(height: 8),
+                            TextButton(
+                              onPressed: _discardRecording,
+                              child: const Text('Discard & re-record'),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+
+                    if (!_isRecording && _recordedPath == null) ...[
                       const SizedBox(height: 40),
                       const Row(
                         children: [

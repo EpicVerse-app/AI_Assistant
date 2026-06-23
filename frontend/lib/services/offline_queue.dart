@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'api_service.dart';
+import 'local_audio_storage.dart';
 
 class PendingUpload {
   final String audioPath;
@@ -74,6 +75,7 @@ class OfflineQueue {
 
       try {
         final meetingId = await ApiService.uploadAudio(file);
+        await LocalAudioStorage.saveForMeeting(meetingId, item.audioPath);
         uploaded.add(meetingId);
         await remove(item.audioPath);
         onSuccess?.call(item.audioPath);

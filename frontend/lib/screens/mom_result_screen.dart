@@ -2,9 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../models/meeting.dart';
+import '../services/meeting_audio_controller.dart';
+import '../services/local_audio_storage.dart';
 import '../services/api_service.dart';
 import '../theme/app_theme.dart';
 import '../utils/mom_parser.dart';
+import '../widgets/meeting_audio_panel.dart';
 
 class MomResultScreen extends StatefulWidget {
   const MomResultScreen({super.key, required this.meeting});
@@ -19,9 +22,8 @@ class _MomResultScreenState extends State<MomResultScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
   bool _summaryExpanded = true;
-  bool _deletingAudio = false;
-  bool _audioDeleted = false;
-  bool _audioPlaying = false;
+  int? _audioDurationSeconds;
+  late final MeetingAudioController _audioController;
 
   Map<String, String> get _mom => widget.meeting.momSections ?? {};
 
@@ -43,62 +45,47 @@ class _MomResultScreenState extends State<MomResultScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 4, vsync: this);
+    _tabController = TabController(length: 4, vsync: this)
+      ..addListener(() {
+        if (!_tabController.indexIsChanging) setState(() {});
+      });
+    _audioDurationSeconds = widget.meeting.durationSeconds;
+    _audioController = MeetingAudioController()..listen();
+    _loadAudio();
+  }
+
+  Future<void> _loadAudio() async {
+    final localDuration = await LocalAudioStorage.getLocalDurationSeconds(
+      widget.meeting.meetingId,
+    );
+    if (localDuration != null && mounted) {
+      setState(() => _audioDurationSeconds = localDuration);
+    }
+
+    final info = await ApiService.getAudioInfo(widget.meeting.meetingId);
+    if (info != null && mounted) {
+      final secs = info['duration_seconds'];
+      if (secs is num) {
+        setState(() => _audioDurationSeconds = secs.round());
+      }
+    }
+
+    if (mounted) {
+      await _audioController.load(widget.meeting.meetingId);
+      if (_audioController.duration.inSeconds > 0 && mounted) {
+        setState(
+          () => _audioDurationSeconds = _audioController.duration.inSeconds,
+        );
+      }
+      if (mounted) setState(() {});
+    }
   }
 
   @override
   void dispose() {
     _tabController.dispose();
+    _audioController.dispose();
     super.dispose();
-  }
-
-  Future<void> _confirmDeleteAudio() async {
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Delete audio file?'),
-        content: const Text(
-          'The recording will be permanently deleted from the server. '
-          'Your transcript and meeting minutes will be kept.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text(
-              'Delete',
-              style: TextStyle(color: AppTheme.priorityHigh),
-            ),
-          ),
-        ],
-      ),
-    );
-
-    if (confirm != true) return;
-
-    setState(() => _deletingAudio = true);
-    try {
-      await ApiService.deleteAudio(widget.meeting.meetingId);
-      if (mounted) {
-        setState(() {
-          _audioDeleted = true;
-          _deletingAudio = false;
-        });
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Audio file deleted.')),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() => _deletingAudio = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to delete audio: $e')),
-        );
-      }
-    }
   }
 
   void _copyToClipboard() {
@@ -124,17 +111,6 @@ class _MomResultScreenState extends State<MomResultScreen>
                 _copyToClipboard();
               },
             ),
-            if (!_audioDeleted)
-              ListTile(
-                leading: const Icon(Icons.delete_outline,
-                    color: AppTheme.priorityHigh),
-                title: const Text('Delete audio',
-                    style: TextStyle(color: AppTheme.priorityHigh)),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  _confirmDeleteAudio();
-                },
-              ),
           ],
         ),
       ),
@@ -144,7 +120,6 @@ class _MomResultScreenState extends State<MomResultScreen>
   @override
   Widget build(BuildContext context) {
     final meeting = widget.meeting;
-    final bottomPad = MediaQuery.paddingOf(context).bottom;
 
     return Scaffold(
       backgroundColor: AppTheme.pageBackground,
@@ -170,7 +145,7 @@ class _MomResultScreenState extends State<MomResultScreen>
               ),
               duration: meeting.displayDuration.isNotEmpty
                   ? meeting.displayDuration
-                  : MomParser.formatDuration(meeting.durationSeconds),
+                  : MomParser.formatDuration(_audioDurationSeconds),
               language: meeting.language,
             ),
             _StatsRow(
@@ -207,26 +182,16 @@ class _MomResultScreenState extends State<MomResultScreen>
                     transcript: meeting.transcript,
                     translation: meeting.translation,
                   ),
-                  _AudioTab(
-                    meetingId: meeting.meetingId,
-                    audioDeleted: _audioDeleted,
-                    deleting: _deletingAudio,
-                    durationSeconds: meeting.durationSeconds,
-                    onDelete: _confirmDeleteAudio,
+                  MeetingAudioPanel(controller: _audioController),
+                  _FilesTab(
+                    meeting: meeting,
+                    hasAudio: _audioController.available,
                   ),
-                  _FilesTab(meeting: meeting),
                 ],
               ),
             ),
-            if (!_audioDeleted) ...[
-              _AudioPlayerBar(
-                playing: _audioPlaying,
-                duration: MomParser.formatDuration(meeting.durationSeconds),
-                onPlayToggle: () =>
-                    setState(() => _audioPlaying = !_audioPlaying),
-              ),
-              SizedBox(height: bottomPad > 0 ? 0 : 8),
-            ],
+            if (_audioController.available && _tabController.index != 2)
+              MeetingAudioMiniBar(controller: _audioController),
           ],
         ),
       ),
@@ -737,124 +702,13 @@ class _TranscriptTab extends StatelessWidget {
   }
 }
 
-// ─── Audio tab ────────────────────────────────────────────────────────────────
-
-class _AudioTab extends StatelessWidget {
-  const _AudioTab({
-    required this.meetingId,
-    required this.audioDeleted,
-    required this.deleting,
-    this.durationSeconds,
-    required this.onDelete,
-  });
-
-  final String meetingId;
-  final bool audioDeleted;
-  final bool deleting;
-  final int? durationSeconds;
-  final VoidCallback onDelete;
-
-  @override
-  Widget build(BuildContext context) {
-    if (audioDeleted) {
-      return const Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.check_circle_outline,
-                color: AppTheme.statGreen, size: 48),
-            SizedBox(height: 12),
-            Text(
-              'Audio deleted',
-              style: TextStyle(
-                color: AppTheme.statGreen,
-                fontSize: 16,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            SizedBox(height: 4),
-            Text(
-              'Transcript and minutes are kept.',
-              style: TextStyle(color: AppTheme.secondaryGray),
-            ),
-          ],
-        ),
-      );
-    }
-
-    return Padding(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        children: [
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(24),
-            decoration: AppTheme.cardDecoration,
-            child: Column(
-              children: [
-                Container(
-                  width: 72,
-                  height: 72,
-                  decoration: const BoxDecoration(
-                    color: AppTheme.primaryPurple,
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(Icons.play_arrow,
-                      color: Colors.white, size: 36),
-                ),
-                const SizedBox(height: 16),
-                const Text(
-                  'Meeting Audio',
-                  style: TextStyle(
-                    fontSize: 17,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  'Duration: ${MomParser.formatDuration(durationSeconds)}',
-                  style: const TextStyle(color: AppTheme.secondaryGray),
-                ),
-                const SizedBox(height: 20),
-                const _WaveformBars(),
-                const SizedBox(height: 12),
-                Text(
-                  'Stream: ${ApiService.baseUrl}/transcription/$meetingId/audio/play',
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    fontSize: 11,
-                    color: AppTheme.secondaryGray,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const Spacer(),
-          if (deleting)
-            const CircularProgressIndicator()
-          else
-            OutlinedButton.icon(
-              onPressed: onDelete,
-              icon: const Icon(Icons.delete_outline,
-                  color: AppTheme.priorityHigh),
-              label: const Text('Delete Audio Recording'),
-              style: OutlinedButton.styleFrom(
-                foregroundColor: AppTheme.priorityHigh,
-                side: const BorderSide(color: AppTheme.priorityHigh),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-}
-
 // ─── Files tab ────────────────────────────────────────────────────────────────
 
 class _FilesTab extends StatelessWidget {
-  const _FilesTab({required this.meeting});
+  const _FilesTab({required this.meeting, required this.hasAudio});
 
   final Meeting meeting;
+  final bool hasAudio;
 
   @override
   Widget build(BuildContext context) {
@@ -877,7 +731,7 @@ class _FilesTab extends StatelessWidget {
       (
         name: 'Audio Recording',
         icon: Icons.audiotrack_outlined,
-        available: true,
+        available: hasAudio,
       ),
     ];
 
@@ -1296,124 +1150,6 @@ class _ConversationBlock extends StatelessWidget {
             ),
           );
         }).toList(),
-      ),
-    );
-  }
-}
-
-class _AudioPlayerBar extends StatelessWidget {
-  const _AudioPlayerBar({
-    required this.playing,
-    required this.duration,
-    required this.onPlayToggle,
-  });
-
-  final bool playing;
-  final String duration;
-  final VoidCallback onPlayToggle;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: BoxDecoration(
-        color: AppTheme.surfaceWhite,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: AppTheme.borderGray),
-        boxShadow: const [
-          BoxShadow(
-            color: AppTheme.cardShadow,
-            blurRadius: 8,
-            offset: Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Row(
-        children: [
-          GestureDetector(
-            onTap: onPlayToggle,
-            child: Container(
-              width: 36,
-              height: 36,
-              decoration: const BoxDecoration(
-                color: AppTheme.primaryPurple,
-                shape: BoxShape.circle,
-              ),
-              child: Icon(
-                playing ? Icons.pause : Icons.play_arrow,
-                color: Colors.white,
-                size: 20,
-              ),
-            ),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Meeting Audio',
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                Text(
-                  '00:00:00 / $duration',
-                  style: const TextStyle(
-                    fontSize: 11,
-                    color: AppTheme.secondaryGray,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const Expanded(child: _WaveformBars()),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            decoration: BoxDecoration(
-              color: AppTheme.fillGray,
-              borderRadius: BorderRadius.circular(6),
-            ),
-            child: const Text(
-              '1x',
-              style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _WaveformBars extends StatelessWidget {
-  const _WaveformBars();
-
-  static const _heights = [
-    0.4, 0.7, 0.5, 0.9, 0.6, 0.8, 0.4, 0.7, 0.5, 0.9,
-    0.6, 0.5, 0.8, 0.4, 0.7, 0.6, 0.9, 0.5, 0.7, 0.4,
-  ];
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      height: 28,
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        crossAxisAlignment: CrossAxisAlignment.end,
-        children: [
-          for (final h in _heights)
-            Container(
-              width: 3,
-              height: 28 * h,
-              margin: const EdgeInsets.symmetric(horizontal: 1),
-              decoration: BoxDecoration(
-                color: AppTheme.accentBlue.withValues(alpha: 0.7),
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-        ],
       ),
     );
   }

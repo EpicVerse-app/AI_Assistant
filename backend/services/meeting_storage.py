@@ -1,6 +1,7 @@
 """Save each meeting's artifacts under outputs/meetings/{meeting_id}/."""
 
 import json
+import shutil
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -12,6 +13,13 @@ def meeting_dir(meeting_id: str) -> Path:
     path = MEETINGS_ROOT / meeting_id
     path.mkdir(parents=True, exist_ok=True)
     return path
+
+
+def delete_meeting_folder(meeting_id: str) -> None:
+    """Remove transcript, MoM, and metadata files for a meeting."""
+    folder = MEETINGS_ROOT / meeting_id
+    if folder.exists():
+        shutil.rmtree(folder)
 
 
 def save_transcript(meeting_id: str, text: str, language: str | None = None) -> Path:

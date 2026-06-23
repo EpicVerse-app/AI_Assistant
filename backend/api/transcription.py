@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from database.db import SessionLocal, get_db
 from database.models import Meeting, MeetingStatus
 from services.meeting_storage import (
+    delete_meeting_folder,
     init_metadata,
     load_mom_json,
     load_mom_markdown,
@@ -282,3 +283,20 @@ def delete_audio(meeting_id: str, db: Session = Depends(get_db)):
         meeting.audio_filename = None
         db.commit()
     return {"meeting_id": meeting_id, "message": "Audio file deleted."}
+
+
+@router.delete("/{meeting_id}")
+def delete_meeting(meeting_id: str, db: Session = Depends(get_db)):
+    """Delete meeting record and all artifacts except the server audio file."""
+    meeting = db.query(Meeting).filter(Meeting.meeting_id == meeting_id).first()
+    if not meeting:
+        raise HTTPException(status_code=404, detail="Meeting not found.")
+
+    delete_meeting_folder(meeting_id)
+    db.delete(meeting)
+    db.commit()
+
+    return {
+        "meeting_id": meeting_id,
+        "message": "Meeting deleted. Audio file was kept.",
+    }
