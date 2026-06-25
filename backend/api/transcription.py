@@ -3,7 +3,7 @@ import shutil
 import uuid
 from pathlib import Path
 
-from fastapi import APIRouter, UploadFile, File, HTTPException, Depends, BackgroundTasks
+from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Depends, BackgroundTasks
 from fastapi.responses import StreamingResponse
 from pydub import AudioSegment
 from pydub.exceptions import CouldntDecodeError
@@ -12,12 +12,15 @@ from sqlalchemy.orm import Session
 from database.db import SessionLocal, get_db
 from database.models import Meeting, MeetingStatus
 from services.meeting_storage import (
+    MEETINGS_ROOT,
     delete_meeting_folder,
     init_metadata,
+    load_error_message,
     load_mom_json,
     load_mom_markdown,
     meeting_dir,
 )
+from utils.datetime_format import local_wall_clock, utc_epoch_ms, utc_iso
 from services.pipeline import process_meeting
 
 router = APIRouter(prefix="/transcription", tags=["Transcription"])
@@ -41,11 +44,26 @@ def _process_transcription(meeting_id: str, audio_path: Path) -> None:
         db.close()
 
 
+def _meeting_list_item(m: Meeting) -> dict:
+    local_dt = local_wall_clock(m.created_at, m.timezone_offset_minutes)
+    return {
+        "meeting_id": m.meeting_id,
+        "status": m.status,
+        "language": m.language,
+        "created_at": utc_iso(m.created_at),
+        "created_at_ms": utc_epoch_ms(m.created_at),
+        "meeting_date": local_dt.strftime("%Y-%m-%d"),
+        "meeting_time": local_dt.strftime("%H:%M"),
+        "duration_seconds": m.duration_seconds,
+    }
+
+
 @router.post("/upload")
 async def upload_audio(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
-    client_id: str = None,
+    client_id: str = Form(None),
+    timezone_offset_minutes: int = Form(None),
     db: Session = Depends(get_db),
 ):
     meeting_id = str(uuid.uuid4())
@@ -77,6 +95,7 @@ async def upload_audio(
         meeting_id=meeting_id,
         client_id=client_id,
         audio_filename=str(wav_path),
+        timezone_offset_minutes=timezone_offset_minutes,
         status=MeetingStatus.uploaded,
     )
     db.add(meeting)
@@ -186,22 +205,29 @@ def list_meetings(db: Session = Depends(get_db)):
 
         has_summary = markdown is not None or (m.mom_path is not None and Path(m.mom_path).exists())
         topic = mom_data.get("meeting_topic") if mom_data else None
-
-        results.append({
-            "meeting_id": m.meeting_id,
-            "status": m.status,
-            "language": m.language,
-            "created_at": m.created_at.isoformat(),
-            "meeting_date": m.meeting_date,
-            "meeting_time": m.meeting_time,
-            "duration_seconds": m.duration_seconds,
+        item = _meeting_list_item(m)
+        item.update({
             "meeting_topic": topic,
             "summary_preview": summary_preview,
             "transcript_preview": transcript_preview,
             "has_summary": has_summary,
             "output_folder": str(meeting_dir(m.meeting_id)),
         })
+        results.append(item)
     return {"meetings": results}
+
+
+@router.delete("/list/all")
+def delete_all_meetings(db: Session = Depends(get_db)):
+    """Delete every meeting record and its output folder (server audio kept)."""
+    meetings = db.query(Meeting).all()
+    deleted = 0
+    for meeting in meetings:
+        delete_meeting_folder(meeting.meeting_id)
+        db.delete(meeting)
+        deleted += 1
+    db.commit()
+    return {"deleted": deleted, "message": f"Deleted {deleted} meeting(s)."}
 
 
 @router.get("/{meeting_id}/detail")
@@ -236,18 +262,22 @@ def get_meeting_detail(meeting_id: str, db: Session = Depends(get_db)):
         if not mom.get("meeting_date") or mom.get("meeting_date") == "Not mentioned":
             mom = {**mom, "meeting_date": meeting.meeting_date}
 
+    local_dt = local_wall_clock(meeting.created_at, meeting.timezone_offset_minutes)
+
     return {
         "meeting_id": meeting.meeting_id,
         "status": meeting.status,
         "language": meeting.language,
-        "created_at": meeting.created_at.isoformat(),
-        "meeting_date": meeting.meeting_date,
-        "meeting_time": meeting.meeting_time,
+        "created_at": utc_iso(meeting.created_at),
+        "created_at_ms": utc_epoch_ms(meeting.created_at),
+        "meeting_date": local_dt.strftime("%Y-%m-%d"),
+        "meeting_time": local_dt.strftime("%H:%M"),
         "duration_seconds": meeting.duration_seconds,
         "transcript": transcript,
         "translation": translation,
         "summary": summary,
         "mom": mom,
+        "error_message": load_error_message(meeting_id),
         "output_folder": str(folder),
     }
 
@@ -257,8 +287,25 @@ def get_transcript(meeting_id: str, db: Session = Depends(get_db)):
     meeting = db.query(Meeting).filter(Meeting.meeting_id == meeting_id).first()
     if not meeting:
         raise HTTPException(status_code=404, detail="Meeting not found.")
+
+    error_message = load_error_message(meeting_id)
+
+    if meeting.status == MeetingStatus.failed:
+        return {
+            "meeting_id": meeting_id,
+            "status": meeting.status,
+            "transcript": None,
+            "error_message": error_message
+            or "Processing failed. No speech detected or the server could not finish.",
+        }
+
     if meeting.status != MeetingStatus.done:
-        return {"meeting_id": meeting_id, "status": meeting.status, "transcript": None}
+        return {
+            "meeting_id": meeting_id,
+            "status": meeting.status,
+            "transcript": None,
+            "error_message": error_message,
+        }
 
     folder_transcript = meeting_dir(meeting_id) / "transcript.txt"
     if folder_transcript.exists():
@@ -266,9 +313,20 @@ def get_transcript(meeting_id: str, db: Session = Depends(get_db)):
     elif meeting.transcript_path:
         transcript = Path(meeting.transcript_path).read_text(encoding="utf-8")
     else:
-        return {"meeting_id": meeting_id, "status": meeting.status, "transcript": None}
+        return {
+            "meeting_id": meeting_id,
+            "status": meeting.status,
+            "transcript": None,
+            "error_message": error_message,
+        }
 
-    return {"meeting_id": meeting_id, "status": meeting.status, "language": meeting.language, "transcript": transcript}
+    return {
+        "meeting_id": meeting_id,
+        "status": meeting.status,
+        "language": meeting.language,
+        "transcript": transcript,
+        "error_message": error_message,
+    }
 
 
 @router.delete("/{meeting_id}/audio")

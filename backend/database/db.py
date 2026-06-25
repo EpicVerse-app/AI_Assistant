@@ -23,3 +23,18 @@ def get_db():
 def init_db():
     from database import models  # noqa: F401 — ensures tables are registered
     Base.metadata.create_all(bind=engine)
+    _migrate_schema()
+
+
+def _migrate_schema():
+    """Apply lightweight SQLite migrations for existing databases."""
+    with engine.connect() as conn:
+        columns = {
+            row[1]
+            for row in conn.exec_driver_sql("PRAGMA table_info(meetings)").fetchall()
+        }
+        if "timezone_offset_minutes" not in columns:
+            conn.exec_driver_sql(
+                "ALTER TABLE meetings ADD COLUMN timezone_offset_minutes INTEGER"
+            )
+        conn.commit()

@@ -38,6 +38,7 @@ class Meeting(Base):
     transcript_path = Column(String, nullable=True)
     translation_path = Column(String, nullable=True)
     mom_path = Column(String, nullable=True)
+    timezone_offset_minutes = Column(Integer, nullable=True)
     status = Column(SAEnum(MeetingStatus), default=MeetingStatus.uploaded, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)

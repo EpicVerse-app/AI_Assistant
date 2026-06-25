@@ -105,6 +105,18 @@ def _update_metadata(meeting_id: str, **fields: Any) -> None:
     meta_path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
 
 
+def save_error_message(meeting_id: str, message: str) -> None:
+    _update_metadata(meeting_id, error_message=message)
+
+
+def load_error_message(meeting_id: str) -> str | None:
+    message = load_metadata(meeting_id).get("error_message")
+    if message is None:
+        return None
+    text = str(message).strip()
+    return text or None
+
+
 def _render_section_body(body: str) -> str:
     text = str(body).strip() or "Not mentioned"
     if text == "Not mentioned":
