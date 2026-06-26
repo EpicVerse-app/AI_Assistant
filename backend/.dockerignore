@@ -9,3 +9,5 @@ audio/
 utils/.env
 .git/
 .gitignore
+scripts/
+*.md

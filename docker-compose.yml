@@ -1,0 +1,54 @@
+# Local backend with PostgreSQL.
+#
+# Setup:
+#   cp backend/utils/.env.example backend/utils/.env
+#   # add SARVAM_API_KEY and OPENAI_API_KEY to backend/utils/.env
+#
+# Run:
+#   docker compose up --build
+#
+# API: http://localhost:8000/docs
+# Postgres: localhost:5432 (user/pass/db: ai_assistant)
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ai_assistant
+      POSTGRES_PASSWORD: ai_assistant
+      POSTGRES_DB: ai_assistant
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ai_assistant -d ai_assistant"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    env_file:
+      - path: ./backend/utils/.env
+        required: false
+    environment:
+      PORT: "8000"
+      DATABASE_URL: postgresql+psycopg2://ai_assistant:ai_assistant@db:5432/ai_assistant
+    volumes:
+      - api-uploads:/app/uploads
+      - api-outputs:/app/outputs
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  postgres-data:
+  api-uploads:
+  api-outputs:
