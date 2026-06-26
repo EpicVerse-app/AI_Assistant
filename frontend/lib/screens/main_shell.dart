@@ -37,7 +37,7 @@ class _MainShellState extends State<MainShell> {
     ];
 
     return Scaffold(
-      backgroundColor: AppTheme.pageBackground,
+      backgroundColor: Colors.transparent,
       body: screens[_currentIndex],
       floatingActionButton: FloatingActionButton(
         onPressed: _openRecording,

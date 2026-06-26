@@ -62,6 +62,20 @@ cd "$SAVED" >/dev/null
 
 CLASSPATH=$APP_HOME/gradle/wrapper/gradle-wrapper.jar
 
+# Auto-detect JDK when JAVA_HOME is unset (Flutter/Android on macOS).
+if [ -z "$JAVA_HOME" ] ; then
+  for _jdk in \
+    "/usr/local/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home" \
+    "/opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home" \
+    ; do
+    if [ -x "$_jdk/bin/java" ] ; then
+      export JAVA_HOME="$_jdk"
+      break
+    fi
+  done
+  unset _jdk
+fi
+
 # Determine the Java command to use to start the JVM.
 if [ -n "$JAVA_HOME" ] ; then
     if [ -x "$JAVA_HOME/jre/sh/java" ] ; then

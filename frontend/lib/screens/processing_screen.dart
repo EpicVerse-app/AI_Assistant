@@ -37,7 +37,8 @@ class _ProcessingScreenState extends State<ProcessingScreen> {
       if (meeting.isFailed) {
         setState(() {
           _step = _Step.failed;
-          _errorMessage = 'Processing failed. No speech detected or API error.';
+          _errorMessage = meeting.errorMessage ??
+              'Processing failed. No speech was detected or the server could not finish.';
         });
         return;
       }
@@ -73,7 +74,7 @@ class _ProcessingScreenState extends State<ProcessingScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppTheme.surfaceWhite,
+      backgroundColor: Colors.transparent,
       appBar: AppBar(
         automaticallyImplyLeading: false,
         title: const Text('Processing'),

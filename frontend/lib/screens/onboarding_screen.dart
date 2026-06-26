@@ -91,7 +91,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     final illustrationSize = isCompact ? 240.0 : 280.0;
 
     return Scaffold(
-      backgroundColor: AppTheme.surfaceWhite,
+      backgroundColor: Colors.transparent,
       body: SafeArea(
         child: Column(
           children: [

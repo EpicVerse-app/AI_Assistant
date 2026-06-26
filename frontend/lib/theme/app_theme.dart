@@ -2,52 +2,67 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 class AppTheme {
-  static const Color primaryBlack = Color(0xFF1D1D1F);
-  static const Color secondaryGray = Color(0xFF86868B);
-  static const Color borderGray = Color(0xFFE5E5EA);
-  static const Color surfaceWhite = Color(0xFFFFFFFF);
-  static const Color fillGray = Color(0xFFF5F5F7);
-  static const Color pageBackground = Color(0xFFF8F9FC);
-  static const Color accentBlue = Color(0xFF0071E3);
+  // Orzen warm gradient palette (gold tan → bronze → espresso)
+  static const Color gradientTop = Color(0xFFC9A873);
+  static const Color gradientMid = Color(0xFF6B4E32);
+  static const Color gradientBottom = Color(0xFF1A1510);
 
-  // Design system — purple accent UI
+  static const LinearGradient pageGradient = LinearGradient(
+    begin: Alignment.topCenter,
+    end: Alignment.bottomCenter,
+    colors: [gradientTop, gradientMid, gradientBottom],
+    stops: [0.0, 0.42, 1.0],
+  );
+
+  static const Color primaryBlack = Color(0xFFF5ECD8);
+  static const Color secondaryGray = Color(0xFFB8A088);
+  static const Color borderGray = Color(0xFF5C4A38);
+  static const Color surfaceWhite = Color(0xFF3A2E24);
+  static const Color fillGray = Color(0xFF2D241C);
+  static const Color pageBackground = Color(0xFF1A1510);
+  static const Color accentBlue = Color(0xFFD4AF6A);
+
+  // Button accent — unchanged per request
   static const Color primaryPurple = Color(0xFF6C5CE7);
-  static const Color primaryPurpleLight = Color(0xFFF0EDFF);
-  static const Color statBlue = Color(0xFF4A90E2);
-  static const Color statGreen = Color(0xFF34C759);
-  static const Color statOrange = Color(0xFFFF9500);
-  static const Color statPurple = Color(0xFF7C6CF6);
+  static const Color primaryPurpleLight = Color(0xFF4A3D66);
+
+  static const Color statBlue = Color(0xFFD4AF6A);
+  static const Color statGreen = Color(0xFF8FB86A);
+  static const Color statOrange = Color(0xFFE8A54B);
+  static const Color statPurple = Color(0xFFC9A873);
   static const Color priorityHigh = Color(0xFFFF3B30);
   static const Color priorityMedium = Color(0xFFFF9500);
-  static const Color cardShadow = Color(0x0F000000);
+  static const Color cardShadow = Color(0x40000000);
 
   static ThemeData get lightTheme {
     final colorScheme = ColorScheme.fromSeed(
-      seedColor: primaryPurple,
-      brightness: Brightness.light,
+      seedColor: accentBlue,
+      brightness: Brightness.dark,
       surface: surfaceWhite,
       onSurface: primaryBlack,
-      primary: primaryPurple,
+      primary: accentBlue,
     );
 
     return ThemeData(
       useMaterial3: true,
+      brightness: Brightness.dark,
       colorScheme: colorScheme,
-      scaffoldBackgroundColor: pageBackground,
+      scaffoldBackgroundColor: Colors.transparent,
       fontFamily: '.AppleSystemUIFont',
       appBarTheme: const AppBarTheme(
-        backgroundColor: surfaceWhite,
+        backgroundColor: Color(0xCC2A2218),
+        foregroundColor: primaryBlack,
         elevation: 0,
         scrolledUnderElevation: 0,
         systemOverlayStyle: SystemUiOverlayStyle(
-          statusBarBrightness: Brightness.light,
-          statusBarIconBrightness: Brightness.dark,
+          statusBarBrightness: Brightness.dark,
+          statusBarIconBrightness: Brightness.light,
         ),
       ),
       tabBarTheme: const TabBarThemeData(
-        labelColor: primaryPurple,
+        labelColor: accentBlue,
         unselectedLabelColor: secondaryGray,
-        indicatorColor: primaryPurple,
+        indicatorColor: accentBlue,
         indicatorSize: TabBarIndicatorSize.label,
         labelStyle: TextStyle(
           fontSize: 12,
@@ -74,7 +89,7 @@ class AppTheme {
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(color: primaryBlack, width: 1.5),
+          borderSide: const BorderSide(color: accentBlue, width: 1.5),
         ),
         errorBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
@@ -134,6 +149,10 @@ class AppTheme {
       ),
     );
   }
+
+  static BoxDecoration get pageBackgroundDecoration => const BoxDecoration(
+        gradient: pageGradient,
+      );
 
   static BoxDecoration cardDecoration = BoxDecoration(
     color: surfaceWhite,

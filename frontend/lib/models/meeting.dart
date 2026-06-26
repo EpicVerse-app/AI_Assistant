@@ -1,3 +1,5 @@
+import '../utils/date_time_utils.dart';
+
 class Meeting {
   final String meetingId;
   final String? clientId;
@@ -7,6 +9,7 @@ class Meeting {
   final String? language;
   final String status;
   final DateTime createdAt;
+  final String? errorMessage;
   String? transcript;
   String? translation;
   String? summary;
@@ -21,6 +24,7 @@ class Meeting {
     this.language,
     required this.status,
     required this.createdAt,
+    this.errorMessage,
     this.transcript,
     this.translation,
     this.summary,
@@ -28,6 +32,7 @@ class Meeting {
   });
 
   factory Meeting.fromJson(Map<String, dynamic> json) {
+    final epochMs = DateTimeUtils.epochMsFromJson(json);
     return Meeting(
       meetingId: json['meeting_id'] as String,
       clientId: json['client_id'] as String?,
@@ -36,9 +41,11 @@ class Meeting {
       durationSeconds: json['duration_seconds'] as int?,
       language: json['language'] as String?,
       status: json['status'] as String? ?? 'uploaded',
-      createdAt: json['created_at'] != null
-          ? DateTime.tryParse(json['created_at'] as String) ?? DateTime.now()
-          : DateTime.now(),
+      createdAt: DateTimeUtils.parseApi(
+        json['created_at'] as String?,
+        epochMs: epochMs,
+      ),
+      errorMessage: json['error_message'] as String?,
       transcript: json['transcript'] as String?,
       translation: json['translation'] as String?,
       summary: json['summary'] as String?,
@@ -58,14 +65,9 @@ class Meeting {
   bool get isFailed => status == 'failed';
   bool get isProcessing => status == 'processing' || status == 'uploaded';
 
-  String get displayDate {
-    if (meetingDate != null) return meetingDate!;
-    const months = [
-      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
-    ];
-    return '${months[createdAt.month - 1]} ${createdAt.day}, ${createdAt.year}';
-  }
+  String get displayDate => DateTimeUtils.formatDate(createdAt);
+
+  String get displayTime => DateTimeUtils.formatTime(createdAt);
 
   String get displayDuration {
     if (durationSeconds == null) return '';
@@ -85,6 +87,7 @@ class Meeting {
       'language': language,
       'status': status,
       'created_at': createdAt.toIso8601String(),
+      'error_message': errorMessage,
       'transcript': transcript,
       'translation': translation,
       'summary': summary,

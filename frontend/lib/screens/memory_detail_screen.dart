@@ -14,7 +14,7 @@ class MemoryDetailScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppTheme.surfaceWhite,
+      backgroundColor: Colors.transparent,
       appBar: AppBar(
         title: const Text('MoM'),
         actions: [

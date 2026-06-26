@@ -122,7 +122,7 @@ class _MomResultScreenState extends State<MomResultScreen>
     final meeting = widget.meeting;
 
     return Scaffold(
-      backgroundColor: AppTheme.pageBackground,
+      backgroundColor: Colors.transparent,
       body: SafeArea(
         bottom: false,
         child: Column(
@@ -135,14 +135,8 @@ class _MomResultScreenState extends State<MomResultScreen>
               onMenu: _showMenu,
             ),
             _MetaPills(
-              date: MomParser.formatDisplayDate(
-                meeting.meetingDate ?? _mom['meeting_date'],
-                meeting.createdAt,
-              ),
-              time: MomParser.formatDisplayTime(
-                meeting.meetingTime,
-                meeting.createdAt,
-              ),
+              date: meeting.displayDate,
+              time: meeting.displayTime,
               duration: meeting.displayDuration.isNotEmpty
                   ? meeting.displayDuration
                   : MomParser.formatDuration(_audioDurationSeconds),

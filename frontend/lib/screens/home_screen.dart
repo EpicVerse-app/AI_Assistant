@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../services/api_service.dart';
 import '../services/offline_queue.dart';
 import '../theme/app_theme.dart';
+import '../utils/date_time_utils.dart';
 import '../widgets/app_logo.dart';
 import 'mom_result_screen.dart';
 import 'processing_screen.dart';
@@ -157,7 +158,7 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppTheme.surfaceWhite,
+      backgroundColor: Colors.transparent,
       appBar: AppBar(
         title: const Row(
           children: [
@@ -260,7 +261,29 @@ class _HomeScreenState extends State<HomeScreen> {
               const Center(
                 child: Padding(
                   padding: EdgeInsets.symmetric(vertical: 32),
-                  child: CircularProgressIndicator(),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      CircularProgressIndicator(),
+                      SizedBox(height: 16),
+                      Text(
+                        'Loading meetings…',
+                        style: TextStyle(
+                          color: AppTheme.secondaryGray,
+                          fontSize: 14,
+                        ),
+                      ),
+                      SizedBox(height: 4),
+                      Text(
+                        'First load may take a minute while the server wakes up.',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: AppTheme.secondaryGray,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               )
             else if (_loadError != null)
@@ -322,22 +345,11 @@ class _MeetingCard extends StatelessWidget {
   final VoidCallback onTap;
   final VoidCallback onDelete;
 
-  String _formatDate(String? isoDate) {
-    if (isoDate == null) return 'Unknown date';
-    try {
-      final dt = DateTime.parse(isoDate).toLocal();
-      const months = [
-        'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-        'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
-      ];
-      final h = dt.hour % 12 == 0 ? 12 : dt.hour % 12;
-      final m = dt.minute.toString().padLeft(2, '0');
-      final ampm = dt.hour < 12 ? 'AM' : 'PM';
-      return '${months[dt.month - 1]} ${dt.day}, ${dt.year}  $h:$m $ampm';
-    } catch (_) {
-      return isoDate;
-    }
-  }
+  String _formatDate(Map<String, dynamic> meeting) =>
+      DateTimeUtils.formatCardDateTime(
+        meeting['created_at'] as String?,
+        epochMs: DateTimeUtils.epochMsFromJson(meeting),
+      );
 
   @override
   Widget build(BuildContext context) {
@@ -374,7 +386,7 @@ class _MeetingCard extends StatelessWidget {
                 const SizedBox(width: 6),
                 Expanded(
                   child: Text(
-                    _formatDate(meeting['created_at'] as String?),
+                    _formatDate(meeting),
                     style: const TextStyle(
                       fontSize: 13,
                       fontWeight: FontWeight.w600,

@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:http/http.dart' as http;
 
 import '../models/meeting.dart';
+import '../utils/date_time_utils.dart';
 
 class ApiService {
   static const String baseUrl = 'https://ai-assistant-api-9xhb.onrender.com';
@@ -20,6 +21,8 @@ class ApiService {
     if (clientId != null) {
       request.fields['client_id'] = clientId;
     }
+    request.fields['timezone_offset_minutes'] =
+        DateTimeUtils.deviceTimezoneOffsetMinutes().toString();
 
     request.files.add(
       await http.MultipartFile.fromPath('file', audioFile.path),
@@ -99,6 +102,19 @@ class ApiService {
     return data['summary'] as String? ?? '';
   }
 
+  // Delete all meetings (transcripts + MoM; server audio kept per meeting)
+  static Future<int> deleteAllMeetings() async {
+    final uri = Uri.parse('$baseUrl/transcription/list/all');
+    final response = await http.delete(uri).timeout(_timeout);
+
+    if (response.statusCode != 200) {
+      throw Exception('Delete all meetings failed: ${response.body}');
+    }
+
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    return data['deleted'] as int? ?? 0;
+  }
+
   // Delete meeting (transcript + MoM; server audio kept; local audio untouched)
   static Future<void> deleteMeeting(String meetingId) async {
     final uri = Uri.parse('$baseUrl/transcription/$meetingId');
@@ -122,7 +138,15 @@ class ApiService {
   // Fetch all meetings (newest first) for home screen
   static Future<List<Map<String, dynamic>>> getMeetings() async {
     final uri = Uri.parse('$baseUrl/transcription/list/all');
-    final response = await http.get(uri).timeout(_timeout);
+    final response = await http.get(uri).timeout(
+      const Duration(seconds: 45),
+      onTimeout: () {
+        throw Exception(
+          'Server is waking up — this can take up to a minute on first load. '
+          'Check your internet and tap Retry.',
+        );
+      },
+    );
 
     if (response.statusCode != 200) {
       throw Exception('Failed to load meetings: ${response.body}');

@@ -4,11 +4,12 @@ import 'dart:io';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
-import 'package:path_provider/path_provider.dart';
-import 'package:record/record.dart';
+import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'package:just_audio/just_audio.dart';
+import 'package:path_provider/path_provider.dart';
 
 import '../services/api_service.dart';
+import '../services/background_recording_service.dart';
 import '../services/local_audio_storage.dart';
 import '../services/offline_queue.dart';
 import '../theme/app_theme.dart';
@@ -23,23 +24,60 @@ class RecordingScreen extends StatefulWidget {
 }
 
 class _RecordingScreenState extends State<RecordingScreen> {
-  final AudioRecorder _recorder = AudioRecorder();
+  final BackgroundRecordingService _recordingService =
+      BackgroundRecordingService.instance;
   final AudioPlayer _previewPlayer = AudioPlayer();
   bool _isRecording = false;
   bool _isLoading = false;
   bool _previewPlaying = false;
-  final Stopwatch _stopwatch = Stopwatch();
-  Timer? _timer;
   Duration _elapsed = Duration.zero;
   String? _recordedPath;
 
   @override
+  void initState() {
+    super.initState();
+    _recordingService.addListener(_onRecordingEvent);
+  }
+
+  @override
   void dispose() {
-    _timer?.cancel();
-    _stopwatch.stop();
+    _recordingService.removeListener(_onRecordingEvent);
     _previewPlayer.dispose();
-    _recorder.dispose();
     super.dispose();
+  }
+
+  void _onRecordingEvent(Map<String, dynamic> event) {
+    final type = event['event'] as String?;
+    if (type == 'tick' && mounted) {
+      setState(() => _elapsed = event['elapsed'] as Duration? ?? _elapsed);
+    } else if (type == 'stopped' && mounted) {
+      _handleRecordingStopped(event['path'] as String?);
+    } else if (type == 'error' && mounted) {
+      setState(() {
+        _isRecording = false;
+        _recordedPath = null;
+        _elapsed = Duration.zero;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(event['message']?.toString() ?? 'Recording error')),
+      );
+    } else if (type == 'started' && mounted) {
+      setState(() => _isRecording = true);
+    }
+  }
+
+  Future<void> _handleRecordingStopped(String? path) async {
+    await Future.delayed(const Duration(milliseconds: 400));
+    if (!mounted) return;
+    setState(() {
+      _isRecording = false;
+      _recordedPath = path;
+    });
+    if (path != null) {
+      try {
+        await _previewPlayer.setFilePath(path);
+      } catch (_) {}
+    }
   }
 
   Future<bool> _hasNetwork() async {
@@ -53,59 +91,40 @@ class _RecordingScreenState extends State<RecordingScreen> {
     setState(() {
       _previewPlaying = false;
       _recordedPath = null;
+      _elapsed = Duration.zero;
     });
 
-    final hasPermission = await _recorder.hasPermission();
-    if (!hasPermission) {
+    try {
+      final dir = await getApplicationDocumentsDirectory();
+      final path =
+          '${dir.path}/recording_${DateTime.now().millisecondsSinceEpoch}.wav';
+
+      await _recordingService.start(path);
+
+      if (mounted) {
+        setState(() => _recordedPath = path);
+      }
+    } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Microphone permission denied.')),
+          SnackBar(content: Text('Could not start recording: $e')),
         );
       }
-      return;
     }
-
-    final dir = await getApplicationDocumentsDirectory();
-    final path =
-        '${dir.path}/recording_${DateTime.now().millisecondsSinceEpoch}.wav';
-
-    await _recorder.start(
-      const RecordConfig(encoder: AudioEncoder.wav, sampleRate: 16000),
-      path: path,
-    );
-
-    _stopwatch
-      ..reset()
-      ..start();
-    _timer = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (mounted) setState(() => _elapsed = _stopwatch.elapsed);
-    });
-
-    setState(() {
-      _isRecording = true;
-      _recordedPath = path;
-    });
   }
 
   Future<void> _stopRecording() async {
-    _stopwatch.stop();
-    _timer?.cancel();
-
-    final path = await _recorder.stop();
-    await Future.delayed(const Duration(milliseconds: 400));
-
-    if (!mounted) return;
-
-    setState(() {
-      _isRecording = false;
-      _recordedPath = path;
-      _elapsed = _stopwatch.elapsed;
-    });
-
-    if (path != null) {
-      try {
-        await _previewPlayer.setFilePath(path);
-      } catch (_) {}
+    try {
+      final path = await _recordingService.stop();
+      if (path != null) {
+        await _handleRecordingStopped(path);
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not stop recording: $e')),
+        );
+      }
     }
   }
 
@@ -203,7 +222,9 @@ class _RecordingScreenState extends State<RecordingScreen> {
   Future<void> _pickAndUpload() async {
     final result = await FilePicker.platform.pickFiles(
       type: FileType.custom,
-      allowedExtensions: ['mp3', 'm4a', 'wav', 'aac', 'ogg', 'flac', 'opus', 'webm', 'mp4'],
+      allowedExtensions: [
+        'mp3', 'm4a', 'wav', 'aac', 'ogg', 'flac', 'opus', 'webm', 'mp4'
+      ],
       allowMultiple: false,
     );
 
@@ -269,197 +290,226 @@ class _RecordingScreenState extends State<RecordingScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppTheme.surfaceWhite,
+    final content = Scaffold(
+      backgroundColor: Colors.transparent,
       appBar: AppBar(title: const Text('Record Meeting')),
       body: SafeArea(
-        child: SingleChildScrollView(
-          physics: const AlwaysScrollableScrollPhysics(
-            parent: BouncingScrollPhysics(),
-          ),
-          padding: const EdgeInsets.all(24),
-          child: _isLoading
-              ? const SizedBox(
-                  height: 400,
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      CircularProgressIndicator(),
-                      SizedBox(height: 16),
-                      Text('Uploading & processing audio...'),
-                    ],
-                  ),
-                )
-              : Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Text(
-                      _format(_elapsed),
-                      style: const TextStyle(
-                        fontSize: 56,
-                        fontWeight: FontWeight.w200,
-                        color: AppTheme.primaryBlack,
-                        fontFeatures: [FontFeature.tabularFigures()],
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      _isRecording ? 'Recording...' : 'Ready to record',
-                      style: const TextStyle(
-                        fontSize: 15,
-                        color: AppTheme.secondaryGray,
-                      ),
-                    ),
-                    if (_isRecording) ...[
-                      const SizedBox(height: 4),
-                      const Text(
-                        'Speak clearly — all languages supported',
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: AppTheme.secondaryGray,
-                        ),
-                      ),
-                    ],
-                    const SizedBox(height: 56),
-                    GestureDetector(
-                      onTap: _isRecording
-                          ? _stopRecording
-                          : (_recordedPath == null ? _startRecording : null),
-                      child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 200),
-                        width: 88,
-                        height: 88,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: _isRecording
-                              ? const Color(0xFFFF3B30)
-                              : AppTheme.primaryBlack,
-                        ),
-                        child: Icon(
-                          _isRecording
-                              ? Icons.stop_rounded
-                              : Icons.mic_rounded,
-                          color: Colors.white,
-                          size: 40,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    Text(
-                      _isRecording
-                          ? 'Tap to stop'
-                          : (_recordedPath != null
-                              ? 'Review your recording below'
-                              : 'Tap to start'),
-                      style: const TextStyle(
-                        fontSize: 14,
-                        color: AppTheme.secondaryGray,
-                      ),
-                    ),
-
-                    if (_recordedPath != null && !_isRecording) ...[
-                      const SizedBox(height: 32),
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.all(20),
-                        decoration: AppTheme.cardDecoration,
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            return SingleChildScrollView(
+              physics: const AlwaysScrollableScrollPhysics(
+                parent: BouncingScrollPhysics(),
+              ),
+              padding: const EdgeInsets.all(24),
+              child: ConstrainedBox(
+                constraints: BoxConstraints(minHeight: constraints.maxHeight),
+                child: _isLoading
+                    ? const SizedBox(
+                        height: 400,
                         child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            GestureDetector(
-                              onTap: _togglePreview,
-                              child: Container(
-                                width: 56,
-                                height: 56,
-                                decoration: const BoxDecoration(
-                                  color: AppTheme.primaryPurple,
-                                  shape: BoxShape.circle,
-                                ),
-                                child: Icon(
-                                  _previewPlaying
-                                      ? Icons.pause
-                                      : Icons.play_arrow,
-                                  color: Colors.white,
-                                  size: 28,
-                                ),
-                              ),
-                            ),
-                            const SizedBox(height: 12),
-                            const Text(
-                              'Recording saved',
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              'Duration: ${MomParser.formatDuration(_elapsed.inSeconds)}',
-                              style: const TextStyle(
-                                color: AppTheme.secondaryGray,
-                              ),
-                            ),
-                            const SizedBox(height: 20),
-                            FilledButton(
-                              onPressed: _uploadAndProcess,
-                              style: FilledButton.styleFrom(
-                                minimumSize: const Size(double.infinity, 48),
-                                backgroundColor: AppTheme.primaryPurple,
-                              ),
-                              child: const Text('Upload & Generate MoM'),
-                            ),
-                            const SizedBox(height: 8),
-                            TextButton(
-                              onPressed: _discardRecording,
-                              child: const Text('Discard & re-record'),
-                            ),
+                            CircularProgressIndicator(),
+                            SizedBox(height: 16),
+                            Text('Uploading & processing audio...'),
                           ],
                         ),
-                      ),
-                    ],
-
-                    if (!_isRecording && _recordedPath == null) ...[
-                      const SizedBox(height: 40),
-                      const Row(
-                        children: [
-                          Expanded(child: Divider()),
-                          Padding(
-                            padding: EdgeInsets.symmetric(horizontal: 12),
-                            child: Text(
-                              'or',
-                              style: TextStyle(
-                                fontSize: 13,
-                                color: AppTheme.secondaryGray,
+                      )
+                    : Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          crossAxisAlignment: CrossAxisAlignment.center,
+                          children: [
+                            SizedBox(
+                              width: double.infinity,
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.center,
+                                children: [
+                                  Text(
+                                    _format(_elapsed),
+                                    textAlign: TextAlign.center,
+                                    style: const TextStyle(
+                                      fontSize: 56,
+                                      fontWeight: FontWeight.w200,
+                                      color: AppTheme.primaryBlack,
+                                      fontFeatures: [
+                                        FontFeature.tabularFigures(),
+                                      ],
+                                    ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    _isRecording
+                                        ? 'Recording...'
+                                        : 'Ready to record',
+                                    textAlign: TextAlign.center,
+                                    style: const TextStyle(
+                                      fontSize: 15,
+                                      color: AppTheme.secondaryGray,
+                                    ),
+                                  ),
+                                  if (_isRecording) ...[
+                                    const SizedBox(height: 4),
+                                    const Text(
+                                      'You can lock the screen — recording continues',
+                                      textAlign: TextAlign.center,
+                                      style: TextStyle(
+                                        fontSize: 13,
+                                        color: AppTheme.secondaryGray,
+                                      ),
+                                    ),
+                                  ],
+                                  const SizedBox(height: 56),
+                                  GestureDetector(
+                                    onTap: _isRecording
+                                        ? _stopRecording
+                                        : (_recordedPath == null
+                                            ? _startRecording
+                                            : null),
+                                    child: AnimatedContainer(
+                                      duration:
+                                          const Duration(milliseconds: 200),
+                                      width: 88,
+                                      height: 88,
+                                      decoration: BoxDecoration(
+                                        shape: BoxShape.circle,
+                                        color: _isRecording
+                                            ? const Color(0xFFFF3B30)
+                                            : AppTheme.gradientBottom,
+                                      ),
+                                      child: Icon(
+                                        _isRecording
+                                            ? Icons.stop_rounded
+                                            : Icons.mic_rounded,
+                                        color: Colors.white,
+                                        size: 40,
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 16),
+                                  Text(
+                                    _isRecording
+                                        ? 'Tap to stop'
+                                        : (_recordedPath != null
+                                            ? 'Review your recording below'
+                                            : 'Tap to start'),
+                                    textAlign: TextAlign.center,
+                                    style: const TextStyle(
+                                      fontSize: 14,
+                                      color: AppTheme.secondaryGray,
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
-                          ),
-                          Expanded(child: Divider()),
-                        ],
-                      ),
-                      const SizedBox(height: 24),
-                      OutlinedButton.icon(
-                        onPressed: _pickAndUpload,
-                        icon: const Icon(Icons.upload_file_outlined, size: 20),
-                        label: const Text('Upload Audio File'),
-                        style: OutlinedButton.styleFrom(
-                          minimumSize: const Size(double.infinity, 52),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(14),
+                            if (_recordedPath != null && !_isRecording) ...[
+                        const SizedBox(height: 32),
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(20),
+                          decoration: AppTheme.cardDecoration,
+                          child: Column(
+                            children: [
+                              GestureDetector(
+                                onTap: _togglePreview,
+                                child: Container(
+                                  width: 56,
+                                  height: 56,
+                                  decoration: const BoxDecoration(
+                                    color: AppTheme.primaryPurple,
+                                    shape: BoxShape.circle,
+                                  ),
+                                  child: Icon(
+                                    _previewPlaying
+                                        ? Icons.pause
+                                        : Icons.play_arrow,
+                                    color: Colors.white,
+                                    size: 28,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(height: 12),
+                              const Text(
+                                'Recording saved',
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                'Duration: ${MomParser.formatDuration(_elapsed.inSeconds)}',
+                                style: const TextStyle(
+                                  color: AppTheme.secondaryGray,
+                                ),
+                              ),
+                              const SizedBox(height: 20),
+                              FilledButton(
+                                onPressed: _uploadAndProcess,
+                                style: FilledButton.styleFrom(
+                                  minimumSize: const Size(double.infinity, 48),
+                                  backgroundColor: AppTheme.primaryPurple,
+                                ),
+                                child: const Text('Upload & Generate MoM'),
+                              ),
+                              const SizedBox(height: 8),
+                              TextButton(
+                                onPressed: _discardRecording,
+                                child: const Text('Discard & re-record'),
+                              ),
+                            ],
                           ),
                         ),
-                      ),
-                      const SizedBox(height: 8),
-                      const Text(
-                        'mp3 · m4a · wav · aac · ogg · flac',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: AppTheme.secondaryGray,
+                      ],
+                      if (!_isRecording && _recordedPath == null) ...[
+                        const SizedBox(height: 40),
+                        const Row(
+                          children: [
+                            Expanded(child: Divider()),
+                            Padding(
+                              padding: EdgeInsets.symmetric(horizontal: 12),
+                              child: Text(
+                                'or',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  color: AppTheme.secondaryGray,
+                                ),
+                              ),
+                            ),
+                            Expanded(child: Divider()),
+                          ],
                         ),
-                      ),
+                        const SizedBox(height: 24),
+                        OutlinedButton.icon(
+                          onPressed: _pickAndUpload,
+                          icon: const Icon(Icons.upload_file_outlined, size: 20),
+                          label: const Text('Upload Audio File'),
+                          style: OutlinedButton.styleFrom(
+                            minimumSize: const Size(double.infinity, 52),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        const Text(
+                          'mp3 · m4a · wav · aac · ogg · flac',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: AppTheme.secondaryGray,
+                          ),
+                        ),
+                      ],
                     ],
-                  ],
+                  ),
                 ),
+              );
+            },
+          ),
         ),
-      ),
     );
+    if (Platform.isAndroid) {
+      return WithForegroundTask(child: content);
+    }
+    return content;
   }
 }

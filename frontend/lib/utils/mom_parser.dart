@@ -1,3 +1,5 @@
+import 'date_time_utils.dart';
+
 class ParsedActionItem {
   const ParsedActionItem({
     required this.task,
@@ -74,30 +76,11 @@ class MomParser {
   }
 
   static String formatDisplayDate(String? isoDate, DateTime fallback) {
-    if (isoDate == null || isoDate.isEmpty) {
-      return _formatDate(fallback);
-    }
-    final parsed = DateTime.tryParse(isoDate);
-    if (parsed != null) return _formatDate(parsed);
-
-    final parts = isoDate.split('-');
-    if (parts.length == 3) {
-      final year = int.tryParse(parts[0]);
-      final month = int.tryParse(parts[1]);
-      final day = int.tryParse(parts[2]);
-      if (year != null && month != null && day != null) {
-        return _formatDate(DateTime(year, month, day));
-      }
-    }
-    return isoDate;
+    return DateTimeUtils.formatDate(fallback);
   }
 
   static String formatDisplayTime(String? time, DateTime fallback) {
-    if (time != null && time.isNotEmpty) return time;
-    final hour = fallback.hour > 12 ? fallback.hour - 12 : fallback.hour;
-    final period = fallback.hour >= 12 ? 'PM' : 'AM';
-    final minute = fallback.minute.toString().padLeft(2, '0');
-    return '${hour == 0 ? 12 : hour}:$minute $period';
+    return DateTimeUtils.formatTime(fallback);
   }
 
   static String formatDuration(int? seconds) {
@@ -116,14 +99,6 @@ class MomParser {
     if (parts.isEmpty) return '?';
     if (parts.length == 1) return parts.first.substring(0, 1).toUpperCase();
     return '${parts.first[0]}${parts.last[0]}'.toUpperCase();
-  }
-
-  static String _formatDate(DateTime date) {
-    const months = [
-      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
-    ];
-    return '${date.day} ${months[date.month - 1]} ${date.year}';
   }
 
   static String _priorityForTask(String task) {

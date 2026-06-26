@@ -37,7 +37,7 @@ class _SearchScreenState extends State<SearchScreen> {
         : _results;
 
     return Scaffold(
-      backgroundColor: AppTheme.surfaceWhite,
+      backgroundColor: Colors.transparent,
       appBar: AppBar(
         title: const Text('Search'),
       ),
