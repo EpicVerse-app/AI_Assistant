@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 
+import '../services/auth_service.dart';
 import '../theme/app_theme.dart';
-import 'login_screen.dart';
+import 'auth_gate.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -15,15 +16,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _autoSummarize = true;
   bool _saveTranscripts = true;
 
-  void _logout() {
+  Future<void> _logout() async {
+    await AuthService.instance.logout();
+    if (!mounted) return;
     Navigator.of(context).pushAndRemoveUntil(
-      MaterialPageRoute<void>(builder: (_) => const LoginScreen()),
+      MaterialPageRoute<void>(builder: (_) => const AuthGate()),
       (_) => false,
     );
   }
 
   @override
   Widget build(BuildContext context) {
+    final user = AuthService.instance.user;
+
     return Scaffold(
       backgroundColor: Colors.transparent,
       appBar: AppBar(
@@ -35,16 +40,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ListTile(
             leading: CircleAvatar(
               backgroundColor: AppTheme.fillGray,
-              child: const Text(
-                'A',
-                style: TextStyle(
+              child: Text(
+                user?.initials ?? '?',
+                style: const TextStyle(
                   fontWeight: FontWeight.w600,
                   color: AppTheme.primaryBlack,
                 ),
               ),
             ),
-            title: const Text('Alex'),
-            subtitle: const Text('alex@example.com'),
+            title: Text(user?.displayName ?? 'Guest'),
+            subtitle: Text(user?.email ?? ''),
             trailing: const Icon(Icons.chevron_right, size: 20),
             onTap: () {},
           ),

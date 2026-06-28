@@ -3,7 +3,7 @@ import sqlite3
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Column, DateTime, Enum as SAEnum, Integer, String, event
+from sqlalchemy import Column, DateTime, Enum as SAEnum, ForeignKey, Integer, String, event
 from sqlalchemy.engine import Engine
 
 from database.db import Base
@@ -24,10 +24,21 @@ def set_sqlite_pragma(dbapi_connection, connection_record):
         cursor.close()
 
 
+class User(Base):
+    __tablename__ = "users"
+
+    user_id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    email = Column(String, unique=True, nullable=False, index=True)
+    password_hash = Column(String, nullable=False)
+    full_name = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
 class Meeting(Base):
     __tablename__ = "meetings"
 
     meeting_id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(String, ForeignKey("users.user_id"), nullable=True, index=True)
     client_id = Column(String, nullable=True)
     meeting_date = Column(String, nullable=True)
     meeting_time = Column(String, nullable=True)

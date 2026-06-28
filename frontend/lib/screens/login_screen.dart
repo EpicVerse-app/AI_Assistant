@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../services/auth_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_logo.dart';
 import 'main_shell.dart';
@@ -14,14 +15,15 @@ class LoginScreen extends StatefulWidget {
 
 class _LoginScreenState extends State<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
-  final _usernameController = TextEditingController();
+  final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   bool _obscurePassword = true;
   bool _isLoading = false;
+  String? _error;
 
   @override
   void dispose() {
-    _usernameController.dispose();
+    _emailController.dispose();
     _passwordController.dispose();
     super.dispose();
   }
@@ -29,14 +31,26 @@ class _LoginScreenState extends State<LoginScreen> {
   Future<void> _login() async {
     if (!_formKey.currentState!.validate()) return;
 
-    setState(() => _isLoading = true);
-    await Future<void>.delayed(const Duration(milliseconds: 600));
-    if (!mounted) return;
-    setState(() => _isLoading = false);
+    setState(() {
+      _isLoading = true;
+      _error = null;
+    });
 
-    Navigator.of(context).pushReplacement(
-      MaterialPageRoute<void>(builder: (_) => const MainShell()),
-    );
+    try {
+      await AuthService.instance.login(
+        email: _emailController.text,
+        password: _passwordController.text,
+      );
+      if (!mounted) return;
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute<void>(builder: (_) => const MainShell()),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _error = e.toString().replaceFirst('Exception: ', ''));
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
   }
 
   @override
@@ -74,17 +88,28 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                     ),
                     const SizedBox(height: 32),
+                    if (_error != null) ...[
+                      Text(
+                        _error!,
+                        style: const TextStyle(color: Color(0xFFFF3B30)),
+                      ),
+                      const SizedBox(height: 12),
+                    ],
                     TextFormField(
-                      controller: _usernameController,
+                      controller: _emailController,
+                      keyboardType: TextInputType.emailAddress,
                       textInputAction: TextInputAction.next,
                       autocorrect: false,
                       decoration: const InputDecoration(
-                        labelText: 'Username',
-                        hintText: 'Enter your username',
+                        labelText: 'Email',
+                        hintText: 'you@company.com',
                       ),
                       validator: (value) {
                         if (value == null || value.trim().isEmpty) {
-                          return 'Enter your username';
+                          return 'Enter your email';
+                        }
+                        if (!value.contains('@')) {
+                          return 'Enter a valid email';
                         }
                         return null;
                       },
@@ -115,15 +140,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         return null;
                       },
                     ),
-                    const SizedBox(height: 8),
-                    Align(
-                      alignment: Alignment.centerRight,
-                      child: TextButton(
-                        onPressed: () {},
-                        child: const Text('Forgot password?'),
-                      ),
-                    ),
-                    const SizedBox(height: 8),
+                    const SizedBox(height: 24),
                     FilledButton(
                       onPressed: _isLoading ? null : _login,
                       child: _isLoading

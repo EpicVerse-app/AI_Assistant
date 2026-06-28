@@ -46,7 +46,12 @@ class MeetingAudioController extends ChangeNotifier {
         return;
       }
 
-      await _player.setUrl(ApiService.audioPlayUrl(meetingId));
+      await _player.setAudioSource(
+        AudioSource.uri(
+          Uri.parse(ApiService.audioPlayUrl(meetingId)),
+          headers: ApiService.authHeaders,
+        ),
+      );
       _initialized = true;
       _available = true;
       _isLocal = false;

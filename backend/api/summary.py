@@ -1,34 +1,46 @@
-from pathlib import Path
-
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from database.db import get_db
-from database.models import Meeting
-from services.meeting_storage import load_mom_json, load_mom_markdown, mom_to_markdown, save_mom
+from database.models import Meeting, User
+from services.meeting_storage import (
+    load_mom_json,
+    load_mom_markdown,
+    meeting_dir,
+    mom_to_markdown,
+    read_transcript,
+    read_translation,
+    save_mom,
+)
 from services.summarizer import generate_mom_structured, generate_summary, extract_speaker_names
+from utils.jwt_auth import get_current_user
+from utils.meetings import get_owned_meeting
 
 router = APIRouter(prefix="/summary", tags=["Summary"])
 
 
 class SummaryRequest(BaseModel):
-    type: str = "meeting"   # "meeting" or "conversation"
+    type: str = "meeting"
 
 
 @router.post("/{meeting_id}")
-def create_summary(meeting_id: str, body: SummaryRequest, db: Session = Depends(get_db)):
-    meeting = db.query(Meeting).filter(Meeting.meeting_id == meeting_id).first()
-    if not meeting:
-        raise HTTPException(status_code=404, detail="Meeting not found.")
+def create_summary(
+    meeting_id: str,
+    body: SummaryRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    meeting = get_owned_meeting(meeting_id, current_user, db)
 
-    text_path = meeting.translation_path or meeting.transcript_path
-    if not text_path or not Path(text_path).exists():
-        raise HTTPException(status_code=400, detail="No transcript or translation available yet.")
-
-    text = Path(text_path).read_text(encoding="utf-8")
-    if not text.strip():
-        raise HTTPException(status_code=400, detail="Transcript is empty — no speech was detected in the audio.")
+    text = read_translation(meeting_id, meeting.translation_path)
+    if not text:
+        text = read_transcript(meeting_id, meeting.transcript_path)
+    if not text or not text.strip():
+        raise HTTPException(
+            status_code=400,
+            detail="No transcript or translation available yet.",
+        )
 
     if body.type == "meeting":
         speaker_names = extract_speaker_names(text)
@@ -41,7 +53,7 @@ def create_summary(meeting_id: str, body: SummaryRequest, db: Session = Depends(
         mom_data["meeting_date"] = meeting.meeting_date or mom_data.get("meeting_date")
         markdown = mom_to_markdown(mom_data)
         _, mom_md_path = save_mom(meeting_id, mom_data, markdown)
-        meeting.mom_path = str(mom_md_path)
+        meeting.mom_path = mom_md_path
         db.commit()
         return {
             "meeting_id": meeting_id,
@@ -55,20 +67,19 @@ def create_summary(meeting_id: str, body: SummaryRequest, db: Session = Depends(
 
 
 @router.get("/{meeting_id}")
-def get_summary(meeting_id: str, db: Session = Depends(get_db)):
-    meeting = db.query(Meeting).filter(Meeting.meeting_id == meeting_id).first()
-    if not meeting:
-        raise HTTPException(status_code=404, detail="Meeting not found.")
+def get_summary(
+    meeting_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    get_owned_meeting(meeting_id, current_user, db)
 
     markdown = load_mom_markdown(meeting_id)
     mom_data = load_mom_json(meeting_id)
-
-    if markdown is None and meeting.mom_path and Path(meeting.mom_path).exists():
-        markdown = Path(meeting.mom_path).read_text(encoding="utf-8")
 
     return {
         "meeting_id": meeting_id,
         "summary": markdown,
         "mom": mom_data,
-        "folder": str(Path(__file__).resolve().parent.parent / "outputs" / "meetings" / meeting_id),
+        "folder": str(meeting_dir(meeting_id)),
     }

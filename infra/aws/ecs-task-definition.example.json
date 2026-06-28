@@ -1,0 +1,57 @@
+{
+  "family": "ai-assistant-api",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "1024",
+  "memory": "2048",
+  "executionRoleArn": "arn:aws:iam::ACCOUNT_ID:role/ecsTaskExecutionRole",
+  "taskRoleArn": "arn:aws:iam::ACCOUNT_ID:role/ai-assistant-task-role",
+  "containerDefinitions": [
+    {
+      "name": "api",
+      "image": "ACCOUNT_ID.dkr.ecr.ap-south-1.amazonaws.com/ai-assistant-api:latest",
+      "portMappings": [{ "containerPort": 8000, "protocol": "tcp" }],
+      "essential": true,
+      "healthCheck": {
+        "command": ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')\""],
+        "interval": 30,
+        "timeout": 5,
+        "retries": 3,
+        "startPeriod": 20
+      },
+      "environment": [
+        { "name": "PYTHONUNBUFFERED", "value": "1" },
+        { "name": "STORAGE_BACKEND", "value": "s3" },
+        { "name": "STORAGE_BUCKET", "value": "YOUR_BUCKET_NAME" },
+        { "name": "AWS_REGION", "value": "ap-south-1" },
+        { "name": "REQUIRE_API_KEY", "value": "true" }
+      ],
+      "secrets": [
+        {
+          "name": "DATABASE_URL",
+          "valueFrom": "arn:aws:secretsmanager:ap-south-1:ACCOUNT_ID:secret:ai-assistant/database-url"
+        },
+        {
+          "name": "SARVAM_API_KEY",
+          "valueFrom": "arn:aws:secretsmanager:ap-south-1:ACCOUNT_ID:secret:ai-assistant/sarvam-api-key"
+        },
+        {
+          "name": "OPENAI_API_KEY",
+          "valueFrom": "arn:aws:secretsmanager:ap-south-1:ACCOUNT_ID:secret:ai-assistant/openai-api-key"
+        },
+        {
+          "name": "API_KEY",
+          "valueFrom": "arn:aws:secretsmanager:ap-south-1:ACCOUNT_ID:secret:ai-assistant/api-key"
+        }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/ai-assistant-api",
+          "awslogs-region": "ap-south-1",
+          "awslogs-stream-prefix": "api"
+        }
+      }
+    }
+  ]
+}

@@ -1,47 +1,43 @@
-from pathlib import Path
-
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from database.db import get_db
-from database.models import Meeting
-from services.meeting_storage import save_translation
+from database.models import Meeting, User
+from services.meeting_storage import read_transcript, read_translation, save_translation
 from services.translator import translate_to_english
+from utils.jwt_auth import get_current_user
+from utils.meetings import get_owned_meeting
 
 router = APIRouter(prefix="/translation", tags=["Translation"])
 
 
 @router.post("/{meeting_id}")
-def translate_meeting(meeting_id: str, db: Session = Depends(get_db)):
-    meeting = db.query(Meeting).filter(Meeting.meeting_id == meeting_id).first()
-    if not meeting:
-        raise HTTPException(status_code=404, detail="Meeting not found.")
-    if not meeting.transcript_path or not Path(meeting.transcript_path).exists():
+def translate_meeting(
+    meeting_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    meeting = get_owned_meeting(meeting_id, current_user, db)
+
+    transcript = read_transcript(meeting_id, meeting.transcript_path)
+    if not transcript:
         raise HTTPException(status_code=400, detail="Transcript not available yet.")
 
-    transcript = Path(meeting.transcript_path).read_text(encoding="utf-8")
     translation = translate_to_english(transcript, source_language=meeting.language or "unknown")
-
-    translation_file = save_translation(meeting_id, translation)
-    meeting.translation_path = str(translation_file)
+    translation_ref = save_translation(meeting_id, translation)
+    meeting.translation_path = translation_ref
     db.commit()
 
     return {"meeting_id": meeting_id, "translation": translation}
 
 
 @router.get("/{meeting_id}")
-def get_translation(meeting_id: str, db: Session = Depends(get_db)):
-    meeting = db.query(Meeting).filter(Meeting.meeting_id == meeting_id).first()
-    if not meeting:
-        raise HTTPException(status_code=404, detail="Meeting not found.")
+def get_translation(
+    meeting_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    meeting = get_owned_meeting(meeting_id, current_user, db)
 
-    folder_path = Path(__file__).resolve().parent.parent / "outputs" / "meetings" / meeting_id / "translation.txt"
-    if folder_path.exists():
-        translation = folder_path.read_text(encoding="utf-8")
-        return {"meeting_id": meeting_id, "translation": translation}
-
-    if not meeting.translation_path or not Path(meeting.translation_path).exists():
-        return {"meeting_id": meeting_id, "translation": None}
-
-    translation = Path(meeting.translation_path).read_text(encoding="utf-8")
+    translation = read_translation(meeting_id, meeting.translation_path)
     return {"meeting_id": meeting_id, "translation": translation}

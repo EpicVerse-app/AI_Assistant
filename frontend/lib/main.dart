@@ -3,7 +3,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import 'screens/login_screen.dart';
+import 'screens/auth_gate.dart';
+import 'services/auth_service.dart';
 import 'services/background_recording_service.dart';
 import 'theme/app_theme.dart';
 
@@ -18,10 +19,11 @@ void main() {
     ),
   );
   runApp(const MyApp());
-  unawaited(_initBackgroundRecording());
+  unawaited(_initAppServices());
 }
 
-Future<void> _initBackgroundRecording() async {
+Future<void> _initAppServices() async {
+  await AuthService.instance.init();
   try {
     await BackgroundRecordingService.instance.init();
   } catch (e, stack) {
@@ -79,7 +81,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
           child: child ?? const SizedBox.shrink(),
         );
       },
-      home: const LoginScreen(),
+      home: const AuthGate(),
     );
   }
 }

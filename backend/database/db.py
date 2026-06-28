@@ -41,14 +41,16 @@ def init_db():
 def _migrate_schema():
     """Apply lightweight schema migrations for existing databases."""
     inspector = inspect(engine)
-    if not inspector.has_table("meetings"):
-        return
 
-    columns = {col["name"] for col in inspector.get_columns("meetings")}
-    if "timezone_offset_minutes" in columns:
-        return
+    if inspector.has_table("meetings"):
+        columns = {col["name"] for col in inspector.get_columns("meetings")}
+        with engine.begin() as conn:
+            if "timezone_offset_minutes" not in columns:
+                conn.execute(
+                    text(
+                        "ALTER TABLE meetings ADD COLUMN timezone_offset_minutes INTEGER"
+                    )
+                )
+            if "user_id" not in columns:
+                conn.execute(text("ALTER TABLE meetings ADD COLUMN user_id VARCHAR"))
 
-    with engine.begin() as conn:
-        conn.execute(
-            text("ALTER TABLE meetings ADD COLUMN timezone_offset_minutes INTEGER")
-        )

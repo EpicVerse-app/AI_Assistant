@@ -1,5 +1,4 @@
 # Render Blueprint — https://render.com/docs/infrastructure-as-code
-# Connect repo at: Dashboard → New → Blueprint → select this repo
 services:
   - type: web
     name: ai-assistant-api
@@ -12,6 +11,24 @@ services:
       - key: SARVAM_API_KEY
         sync: false
       - key: OPENAI_API_KEY
+        sync: false
+      - key: DATABASE_URL
+        sync: false
+      - key: API_KEY
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: REQUIRE_API_KEY
+        value: "false"
+      - key: STORAGE_BACKEND
+        value: s3
+      - key: STORAGE_BUCKET
+        sync: false
+      - key: AWS_REGION
+        sync: false
+      - key: AWS_ACCESS_KEY_ID
+        sync: false
+      - key: AWS_SECRET_ACCESS_KEY
         sync: false
       - key: PYTHONUNBUFFERED
         value: "1"

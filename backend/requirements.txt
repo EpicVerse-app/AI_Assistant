@@ -11,3 +11,7 @@ sounddevice==0.5.5
 numpy==2.4.6
 faster-whisper==1.2.1
 pydub
+boto3>=1.35.0
+PyJWT>=2.9.0
+bcrypt>=4.0.0
+slowapi>=0.1.9

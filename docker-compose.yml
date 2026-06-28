@@ -40,6 +40,9 @@ services:
     environment:
       PORT: "8000"
       DATABASE_URL: postgresql+psycopg2://ai_assistant:ai_assistant@db:5432/ai_assistant
+      STORAGE_BACKEND: local
+      REQUIRE_API_KEY: "false"
+      JWT_SECRET: dev-local-jwt-secret-change-in-production-min-32-chars
     volumes:
       - api-uploads:/app/uploads
       - api-outputs:/app/outputs

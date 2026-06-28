@@ -1,12 +1,13 @@
-"""Save each meeting's artifacts under outputs/meetings/{meeting_id}/."""
+"""Save each meeting's artifacts under outputs/meetings/{meeting_id}/ or S3."""
 
 import json
-import shutil
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-MEETINGS_ROOT = Path(__file__).resolve().parent.parent / "outputs" / "meetings"
+from services.storage import artifacts as artifact_storage
+
+MEETINGS_ROOT = artifact_storage.MEETINGS_ROOT
 
 
 def meeting_dir(meeting_id: str) -> Path:
@@ -16,73 +17,58 @@ def meeting_dir(meeting_id: str) -> Path:
 
 
 def delete_meeting_folder(meeting_id: str) -> None:
-    """Remove transcript, MoM, and metadata files for a meeting."""
-    folder = MEETINGS_ROOT / meeting_id
-    if folder.exists():
-        shutil.rmtree(folder)
+    artifact_storage.delete_meeting_prefix(meeting_id)
 
 
-def save_transcript(meeting_id: str, text: str, language: str | None = None) -> Path:
-    folder = meeting_dir(meeting_id)
-    file_path = folder / "transcript.txt"
-    file_path.write_text(text, encoding="utf-8")
-    _update_metadata(meeting_id, language=language, transcript_path=str(file_path))
-    return file_path
+def save_transcript(meeting_id: str, text: str, language: str | None = None) -> str:
+    ref = artifact_storage.write_text(meeting_id, "transcript.txt", text)
+    _update_metadata(meeting_id, language=language, transcript_path=ref)
+    return ref
 
 
-def save_translation(meeting_id: str, text: str) -> Path:
-    folder = meeting_dir(meeting_id)
-    file_path = folder / "translation.txt"
-    file_path.write_text(text, encoding="utf-8")
-    _update_metadata(meeting_id, translation_path=str(file_path))
-    return file_path
+def save_translation(meeting_id: str, text: str) -> str:
+    ref = artifact_storage.write_text(meeting_id, "translation.txt", text)
+    _update_metadata(meeting_id, translation_path=ref)
+    return ref
 
 
-def save_diarized_transcript(meeting_id: str, text: str) -> Path:
-    folder = meeting_dir(meeting_id)
-    file_path = folder / "diarized_transcript.txt"
-    file_path.write_text(text, encoding="utf-8")
-    _update_metadata(meeting_id, diarized_transcript_path=str(file_path))
-    return file_path
+def save_diarized_transcript(meeting_id: str, text: str) -> str:
+    ref = artifact_storage.write_text(meeting_id, "diarized_transcript.txt", text)
+    _update_metadata(meeting_id, diarized_transcript_path=ref)
+    return ref
 
 
-def save_mom(meeting_id: str, mom_data: dict[str, Any], markdown: str) -> tuple[Path, Path]:
-    folder = meeting_dir(meeting_id)
-    json_path = folder / "mom.json"
-    md_path = folder / "mom.md"
-
-    json_path.write_text(json.dumps(mom_data, indent=2, ensure_ascii=False), encoding="utf-8")
-    md_path.write_text(markdown, encoding="utf-8")
-
-    _update_metadata(meeting_id, mom_json_path=str(json_path), mom_md_path=str(md_path))
-    return json_path, md_path
+def save_mom(meeting_id: str, mom_data: dict[str, Any], markdown: str) -> tuple[str, str]:
+    json_ref = artifact_storage.write_text(
+        meeting_id,
+        "mom.json",
+        json.dumps(mom_data, indent=2, ensure_ascii=False),
+    )
+    md_ref = artifact_storage.write_text(meeting_id, "mom.md", markdown)
+    _update_metadata(meeting_id, mom_json_path=json_ref, mom_md_path=md_ref)
+    return json_ref, md_ref
 
 
 def load_mom_json(meeting_id: str) -> dict[str, Any] | None:
-    path = meeting_dir(meeting_id) / "mom.json"
-    if not path.exists():
-        return None
-    return json.loads(path.read_text(encoding="utf-8"))
+    meta = load_metadata(meeting_id)
+    ref = meta.get("mom_json_path")
+    return artifact_storage.read_json(meeting_id, "mom.json", ref)
 
 
 def load_mom_markdown(meeting_id: str) -> str | None:
-    path = meeting_dir(meeting_id) / "mom.md"
-    if not path.exists():
-        return None
-    return path.read_text(encoding="utf-8").strip()
+    meta = load_metadata(meeting_id)
+    ref = meta.get("mom_md_path")
+    text = artifact_storage.read_text(meeting_id, "mom.md", ref)
+    return text.strip() if text else None
 
 
 def load_metadata(meeting_id: str) -> dict[str, Any]:
-    path = meeting_dir(meeting_id) / "metadata.json"
-    if not path.exists():
-        return {"meeting_id": meeting_id}
-    return json.loads(path.read_text(encoding="utf-8"))
+    data = artifact_storage.read_json(meeting_id, "metadata.json")
+    return data if data else {"meeting_id": meeting_id}
 
 
 def init_metadata(meeting_id: str, *, audio_path: str | None = None) -> None:
-    folder = meeting_dir(meeting_id)
-    meta_path = folder / "metadata.json"
-    if meta_path.exists():
+    if artifact_storage.exists(meeting_id, "metadata.json"):
         return
     data = {
         "meeting_id": meeting_id,
@@ -94,15 +80,22 @@ def init_metadata(meeting_id: str, *, audio_path: str | None = None) -> None:
         "mom_json_path": None,
         "mom_md_path": None,
     }
-    meta_path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    artifact_storage.write_text(
+        meeting_id,
+        "metadata.json",
+        json.dumps(data, indent=2),
+    )
 
 
 def _update_metadata(meeting_id: str, **fields: Any) -> None:
-    meta_path = meeting_dir(meeting_id) / "metadata.json"
-    data = load_metadata(meeting_id) if meta_path.exists() else {"meeting_id": meeting_id}
+    data = load_metadata(meeting_id)
     data.update(fields)
     data["updated_at"] = datetime.utcnow().isoformat()
-    meta_path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+    artifact_storage.write_text(
+        meeting_id,
+        "metadata.json",
+        json.dumps(data, indent=2, ensure_ascii=False),
+    )
 
 
 def save_error_message(meeting_id: str, message: str) -> None:
@@ -115,6 +108,14 @@ def load_error_message(meeting_id: str) -> str | None:
         return None
     text = str(message).strip()
     return text or None
+
+
+def read_transcript(meeting_id: str, reference: str | None = None) -> str | None:
+    return artifact_storage.read_text(meeting_id, "transcript.txt", reference)
+
+
+def read_translation(meeting_id: str, reference: str | None = None) -> str | None:
+    return artifact_storage.read_text(meeting_id, "translation.txt", reference)
 
 
 def _render_section_body(body: str) -> str:

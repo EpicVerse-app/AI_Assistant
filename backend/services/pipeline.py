@@ -2,7 +2,6 @@
 
 import logging
 from datetime import datetime
-from pathlib import Path
 
 from sqlalchemy.orm import Session
 
@@ -72,24 +71,28 @@ def _generate_mom_with_fallback(
         )
 
 
-def process_meeting(meeting_id: str, audio_path: Path, db: Session) -> None:
+def process_meeting(meeting_id: str, audio_reference: str, db: Session) -> None:
+    from services.storage import get_audio_storage
+
     meeting = db.query(Meeting).filter(Meeting.meeting_id == meeting_id).first()
     if not meeting:
         return
+
+    storage = get_audio_storage()
 
     try:
         meeting.status = MeetingStatus.processing
         db.commit()
 
-        init_metadata(meeting_id, audio_path=str(audio_path))
+        init_metadata(meeting_id, audio_path=audio_reference)
 
         recorded_at = _recording_datetime(meeting)
         meeting.meeting_date = recorded_at.strftime("%Y-%m-%d")
         meeting.meeting_time = recorded_at.strftime("%H:%M")
         db.commit()
 
-        # 1. Transcribe (with speaker diarization for long audio)
-        result = transcribe_audio(audio_path, print_output=False)
+        with storage.local_path(meeting_id, audio_reference) as audio_path:
+            result = transcribe_audio(audio_path, print_output=False)
         if not result.transcript.strip():
             save_error_message(
                 meeting_id,
@@ -105,7 +108,7 @@ def process_meeting(meeting_id: str, audio_path: Path, db: Session) -> None:
 
         transcript_path = save_transcript(meeting_id, display_transcript, result.language)
         meeting.language = result.language
-        meeting.transcript_path = str(transcript_path)
+        meeting.transcript_path = transcript_path
 
         if result.diarized_transcript:
             save_diarized_transcript(meeting_id, result.diarized_transcript)
@@ -117,7 +120,7 @@ def process_meeting(meeting_id: str, audio_path: Path, db: Session) -> None:
             result.language or "unknown",
         )
         translation_path = save_translation(meeting_id, translation)
-        meeting.translation_path = str(translation_path)
+        meeting.translation_path = translation_path
 
         # 3. Generate structured MoM — fall back to heuristic summary if LLM fails
         source_text = translation if translation.strip() else result.transcript
@@ -133,7 +136,7 @@ def process_meeting(meeting_id: str, audio_path: Path, db: Session) -> None:
         markdown = mom_to_markdown(mom_data)
         _, mom_md_path = save_mom(meeting_id, mom_data, markdown)
 
-        meeting.mom_path = str(mom_md_path)
+        meeting.mom_path = mom_md_path
         meeting.status = MeetingStatus.done
         db.commit()
 

@@ -5,10 +5,29 @@ import 'package:http/http.dart' as http;
 
 import '../models/meeting.dart';
 import '../utils/date_time_utils.dart';
+import 'auth_service.dart';
 
 class ApiService {
   static const String baseUrl = 'https://ai-assistant-api-9xhb.onrender.com';
   static const Duration _timeout = Duration(seconds: 120);
+
+  /// Optional legacy server key: flutter run --dart-define=API_KEY=...
+  static const String apiKey = String.fromEnvironment('API_KEY', defaultValue: '');
+
+  static Map<String, String> get authHeaders {
+    final headers = <String, String>{
+      ...AuthService.instance.authorizationHeaders(),
+    };
+    if (apiKey.isNotEmpty) {
+      headers['X-API-Key'] = apiKey;
+    }
+    return headers;
+  }
+
+  static Map<String, String> _jsonHeaders() => {
+        ...authHeaders,
+        'Content-Type': 'application/json',
+      };
 
   // Upload audio file → returns meeting_id
   static Future<String> uploadAudio(
@@ -17,6 +36,7 @@ class ApiService {
   }) async {
     final uri = Uri.parse('$baseUrl/transcription/upload');
     final request = http.MultipartRequest('POST', uri);
+    request.headers.addAll(authHeaders);
 
     if (clientId != null) {
       request.fields['client_id'] = clientId;
@@ -56,7 +76,7 @@ class ApiService {
   // Get transcript
   static Future<Meeting> getTranscript(String meetingId) async {
     final uri = Uri.parse('$baseUrl/transcription/$meetingId');
-    final response = await http.get(uri).timeout(_timeout);
+    final response = await http.get(uri, headers: authHeaders).timeout(_timeout);
 
     if (response.statusCode != 200) {
       throw Exception('Get transcript failed: ${response.body}');
@@ -70,7 +90,7 @@ class ApiService {
   // Translate transcript → English
   static Future<String> translate(String meetingId) async {
     final uri = Uri.parse('$baseUrl/translation/$meetingId');
-    final response = await http.post(uri).timeout(_timeout);
+    final response = await http.post(uri, headers: authHeaders).timeout(_timeout);
 
     if (response.statusCode != 200) {
       throw Exception('Translation failed: ${response.body}');
@@ -89,7 +109,7 @@ class ApiService {
     final response = await http
         .post(
           uri,
-          headers: {'Content-Type': 'application/json'},
+          headers: _jsonHeaders(),
           body: jsonEncode({'type': type}),
         )
         .timeout(_timeout);
@@ -105,7 +125,7 @@ class ApiService {
   // Delete all meetings (transcripts + MoM; server audio kept per meeting)
   static Future<int> deleteAllMeetings() async {
     final uri = Uri.parse('$baseUrl/transcription/list/all');
-    final response = await http.delete(uri).timeout(_timeout);
+    final response = await http.delete(uri, headers: authHeaders).timeout(_timeout);
 
     if (response.statusCode != 200) {
       throw Exception('Delete all meetings failed: ${response.body}');
@@ -118,7 +138,7 @@ class ApiService {
   // Delete meeting (transcript + MoM; server audio kept; local audio untouched)
   static Future<void> deleteMeeting(String meetingId) async {
     final uri = Uri.parse('$baseUrl/transcription/$meetingId');
-    final response = await http.delete(uri).timeout(_timeout);
+    final response = await http.delete(uri, headers: authHeaders).timeout(_timeout);
 
     if (response.statusCode != 200) {
       throw Exception('Delete meeting failed: ${response.body}');
@@ -128,7 +148,7 @@ class ApiService {
   // Delete audio file from server
   static Future<void> deleteAudio(String meetingId) async {
     final uri = Uri.parse('$baseUrl/transcription/$meetingId/audio');
-    final response = await http.delete(uri).timeout(_timeout);
+    final response = await http.delete(uri, headers: authHeaders).timeout(_timeout);
 
     if (response.statusCode != 200) {
       throw Exception('Delete audio failed: ${response.body}');
@@ -138,7 +158,7 @@ class ApiService {
   // Fetch all meetings (newest first) for home screen
   static Future<List<Map<String, dynamic>>> getMeetings() async {
     final uri = Uri.parse('$baseUrl/transcription/list/all');
-    final response = await http.get(uri).timeout(
+    final response = await http.get(uri, headers: authHeaders).timeout(
       const Duration(seconds: 45),
       onTimeout: () {
         throw Exception(
@@ -159,7 +179,7 @@ class ApiService {
   // Fetch full meeting detail (transcript + translation + summary)
   static Future<Meeting> getMeetingDetail(String meetingId) async {
     final uri = Uri.parse('$baseUrl/transcription/$meetingId/detail');
-    final response = await http.get(uri).timeout(_timeout);
+    final response = await http.get(uri, headers: authHeaders).timeout(_timeout);
 
     if (response.statusCode != 200) {
       throw Exception('Failed to load meeting: ${response.body}');
@@ -189,7 +209,7 @@ class ApiService {
   static Future<Map<String, dynamic>?> getAudioInfo(String meetingId) async {
     try {
       final uri = Uri.parse('$baseUrl/transcription/$meetingId/audio/info');
-      final response = await http.get(uri).timeout(_timeout);
+      final response = await http.get(uri, headers: authHeaders).timeout(_timeout);
       if (response.statusCode == 200) {
         return jsonDecode(response.body) as Map<String, dynamic>;
       }
