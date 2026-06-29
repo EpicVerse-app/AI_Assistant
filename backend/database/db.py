@@ -1,7 +1,7 @@
 import os
 from pathlib import Path
 
-from sqlalchemy import create_engine, inspect, text
+from sqlalchemy import create_engine
 from sqlalchemy.orm import declarative_base, sessionmaker
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -32,25 +32,12 @@ def get_db():
 
 
 def init_db():
-    from database import models  # noqa: F401 — ensures tables are registered
+    """Run all pending Alembic migrations on startup."""
+    import database.models  # noqa: F401 — register models before migration
 
-    Base.metadata.create_all(bind=engine)
-    _migrate_schema()
+    from alembic.config import Config
+    from alembic import command
 
-
-def _migrate_schema():
-    """Apply lightweight schema migrations for existing databases."""
-    inspector = inspect(engine)
-
-    if inspector.has_table("meetings"):
-        columns = {col["name"] for col in inspector.get_columns("meetings")}
-        with engine.begin() as conn:
-            if "timezone_offset_minutes" not in columns:
-                conn.execute(
-                    text(
-                        "ALTER TABLE meetings ADD COLUMN timezone_offset_minutes INTEGER"
-                    )
-                )
-            if "user_id" not in columns:
-                conn.execute(text("ALTER TABLE meetings ADD COLUMN user_id VARCHAR"))
-
+    alembic_cfg = Config(BASE_DIR / "alembic.ini")
+    alembic_cfg.set_main_option("script_location", str(BASE_DIR / "alembic"))
+    command.upgrade(alembic_cfg, "head")

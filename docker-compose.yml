@@ -28,6 +28,19 @@ services:
       retries: 10
     restart: unless-stopped
 
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
   api:
     build:
       context: ./backend
@@ -43,15 +56,21 @@ services:
       STORAGE_BACKEND: local
       REQUIRE_API_KEY: "false"
       JWT_SECRET: dev-local-jwt-secret-change-in-production-min-32-chars
+      RATE_LIMIT_STORAGE_URI: redis://redis:6379/0
+      LOG_FORMAT: text
+      LOG_LEVEL: INFO
     volumes:
       - api-uploads:/app/uploads
       - api-outputs:/app/outputs
     depends_on:
       db:
         condition: service_healthy
+      redis:
+        condition: service_healthy
     restart: unless-stopped
 
 volumes:
   postgres-data:
+  redis-data:
   api-uploads:
   api-outputs:

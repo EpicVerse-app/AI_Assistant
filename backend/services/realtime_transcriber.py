@@ -6,15 +6,15 @@ Press Ctrl+C to stop.
 """
 
 import io
-import json
+import os
 import sys
 import wave
 from datetime import datetime
-from urllib.request import Request, urlopen
 
 import numpy as np
 import requests
 import sounddevice as sd
+from openai import OpenAI
 
 from utils.sarvam_config import get_sarvam_api_key
 
@@ -43,8 +43,14 @@ def _result(label: str, text: str) -> None:
 SARVAM_STT_URL = "https://api.sarvam.ai/speech-to-text"
 SARVAM_TRANSLATE_URL = "https://api.sarvam.ai/translate"
 
-OLLAMA_URL = "http://localhost:11434"
-OLLAMA_MODEL = "gemma3:1b"
+_openai_client: OpenAI | None = None
+
+
+def _get_openai_client() -> OpenAI:
+    global _openai_client
+    if _openai_client is None:
+        _openai_client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY", ""))
+    return _openai_client
 
 SAMPLE_RATE = 16000
 CHUNK_SECONDS = 5
@@ -115,21 +121,22 @@ def translate_to_english(text: str, source_lang: str) -> str:
 
 
 def generate_summary(conversation: str) -> str:
-    prompt = (
-        "Below is a conversation transcript. Write a concise summary in English "
-        "covering the main topics discussed, key points, and any decisions made.\n\n"
-        f"Conversation:\n{conversation}\n\nSummary:"
-    )
-    payload = {"model": OLLAMA_MODEL, "prompt": prompt, "stream": False}
-    req = Request(
-        f"{OLLAMA_URL}/api/generate",
-        data=json.dumps(payload).encode(),
-        headers={"Content-Type": "application/json"},
-        method="POST",
-    )
     try:
-        with urlopen(req, timeout=120) as resp:
-            return json.loads(resp.read()).get("response", "").strip()
+        response = _get_openai_client().chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "You are a helpful assistant. Write a concise summary in English "
+                        "covering the main topics discussed, key points, and any decisions made."
+                    ),
+                },
+                {"role": "user", "content": f"Conversation:\n{conversation}"},
+            ],
+            temperature=0.3,
+        )
+        return response.choices[0].message.content.strip()
     except Exception as exc:
         return f"[Summary error: {exc}]"
 
@@ -227,8 +234,8 @@ def main() -> None:
 
     if all_transcripts:
         _header("GENERATING CONVERSATION SUMMARY")
-        _step("🤖", "SENDING TO OLLAMA",
-              f"model: {OLLAMA_MODEL}  |  {len(all_transcripts)} chunk(s)")
+        _step("🤖", "GENERATING SUMMARY",
+              f"model: gpt-4o-mini  |  {len(all_transcripts)} chunk(s)")
         full_conversation = " ".join(all_transcripts)
         summary = generate_summary(full_conversation)
         _step("✅", "SUMMARY READY")

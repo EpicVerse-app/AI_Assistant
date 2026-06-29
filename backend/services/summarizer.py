@@ -3,7 +3,6 @@ import logging
 import os
 import re
 from datetime import datetime
-from urllib.request import Request, urlopen
 
 from dotenv import load_dotenv
 from openai import OpenAI
@@ -12,15 +11,14 @@ load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), "../utils/.env")
 
 logger = logging.getLogger(__name__)
 
-_client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY", ""))
+_client: OpenAI | None = None
 
-OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://localhost:11434")
-OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "gemma3:1b")
-OLLAMA_FALLBACK_MODELS = [
-    m.strip()
-    for m in os.environ.get("OLLAMA_FALLBACK_MODELS", "gemma2:9b,gemma3:1b").split(",")
-    if m.strip()
-]
+
+def _get_client() -> OpenAI:
+    global _client
+    if _client is None:
+        _client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY", ""))
+    return _client
 
 MOM_KEYS = [
     "meeting_date",
@@ -62,7 +60,7 @@ Rules:
 
 Be concise, clear, and professional. Extract real content from the transcript — avoid returning "Not mentioned" for every field."""
 
-SUMMARY_SYSTEM_PROMPT = """You are a helpful assistant. 
+SUMMARY_SYSTEM_PROMPT = """You are a helpful assistant.
 Summarize the conversation below in clear, natural English covering:
 - What the conversation is about
 - Key points discussed
@@ -72,12 +70,10 @@ Skip anything not mentioned. Keep it concise and readable."""
 
 
 def extract_speaker_names(transcript: str) -> list[str]:
-    """Extract speaker labels from conversational transcript lines."""
     return _extract_speaker_names(transcript)
 
 
 def _extract_speaker_names(transcript: str) -> list[str]:
-    """Extract speaker labels from conversational transcript lines."""
     names: list[str] = []
     for line in transcript.splitlines():
         if ": " not in line:
@@ -133,7 +129,6 @@ def _normalize_mom(data: dict) -> dict:
 
 
 def _format_as_bullets(value) -> str:
-    """Ensure multi-line bullet formatting for MoM text fields."""
     if value is None:
         return "Not mentioned"
     if isinstance(value, list):
@@ -182,9 +177,7 @@ def _stringify_mom_value(value) -> str:
         parts = []
         for item in value:
             if isinstance(item, dict):
-                parts.append(
-                    ", ".join(f"{k}: {v}" for k, v in item.items() if v)
-                )
+                parts.append(", ".join(f"{k}: {v}" for k, v in item.items() if v))
             else:
                 parts.append(str(item))
         return "; ".join(p for p in parts if p.strip()) or "Not mentioned"
@@ -207,13 +200,7 @@ def _clean_topic(value: str) -> str:
 
 
 def _finalize_mom(mom: dict, *, speaker_names: list[str] | None = None) -> dict:
-    bullet_fields = {
-        "summary",
-        "decisions",
-        "action_items",
-        "deadlines",
-        "important_notes",
-    }
+    bullet_fields = {"summary", "decisions", "action_items", "deadlines", "important_notes"}
     for key in MOM_KEYS:
         if key in ("meeting_date", "meeting_topic", "attendees"):
             continue
@@ -245,11 +232,9 @@ def _heuristic_mom(
     recorded_at: datetime | None = None,
     speaker_names: list[str] | None = None,
 ) -> dict:
-    """Build structured MoM from transcript when LLM calls fail."""
     date_str = recorded_at.strftime("%Y-%m-%d") if recorded_at else "Not mentioned"
     names = speaker_names or _extract_speaker_names(transcript)
 
-    # Strip speaker prefixes for sentence extraction
     plain = re.sub(r"^[^:]+:\s*", "", transcript, flags=re.MULTILINE)
     sentences = [
         s.strip()
@@ -270,12 +255,10 @@ def _heuristic_mom(
     summary_bullets = summary_bullets[:6]
 
     decision_keywords = re.compile(
-        r"\b(decided|decision|approved|accepted|moving|will include|step in as|welcome)\b",
-        re.I,
+        r"\b(decided|decision|approved|accepted|moving|will include|step in as|welcome)\b", re.I
     )
     action_keywords = re.compile(
-        r"\b(will work|need to|assigned|follow up|hire|compile and report|working through)\b",
-        re.I,
+        r"\b(will work|need to|assigned|follow up|hire|compile and report|working through)\b", re.I
     )
     date_pattern = re.compile(
         r"\b(?:January|February|March|April|May|June|July|August|September|October|November|December"
@@ -285,7 +268,6 @@ def _heuristic_mom(
 
     decisions = [s for s in sentences if decision_keywords.search(s)]
     actions = [s for s in sentences if action_keywords.search(s)]
-    deadlines = [m.group(0).strip() for s in sentences for m in [date_pattern.search(s)] if m]
 
     def _bullets(items: list[str], limit: int = 6) -> str:
         if not items:
@@ -327,11 +309,7 @@ def _fallback_mom(
     recorded_at: datetime | None = None,
     speaker_names: list[str] | None = None,
 ) -> dict:
-    return _heuristic_mom(
-        transcript,
-        recorded_at=recorded_at,
-        speaker_names=speaker_names,
-    )
+    return _heuristic_mom(transcript, recorded_at=recorded_at, speaker_names=speaker_names)
 
 
 def _build_mom_user_message(
@@ -365,67 +343,6 @@ def _apply_recorded_date(mom: dict, recorded_at: datetime | None) -> dict:
     return mom
 
 
-def _ollama_models_to_try() -> list[str]:
-    models: list[str] = []
-    for name in [OLLAMA_MODEL, *OLLAMA_FALLBACK_MODELS]:
-        if name and name not in models:
-            models.append(name)
-    return models
-
-
-def _generate_mom_with_ollama(
-    transcript: str,
-    *,
-    recorded_at: datetime | None = None,
-    plain_transcript: str | None = None,
-    speaker_names: list[str] | None = None,
-) -> dict:
-    user_content = _build_mom_user_message(
-        transcript,
-        recorded_at=recorded_at,
-        plain_transcript=plain_transcript,
-        speaker_names=speaker_names,
-    )
-    prompt = f"{MOM_SYSTEM_PROMPT}\n\n{user_content}\n\nRespond with JSON only."
-    last_error: Exception | None = None
-    for model in _ollama_models_to_try():
-        payload = {
-            "model": model,
-            "prompt": prompt,
-            "stream": False,
-            "format": "json",
-        }
-        req = Request(
-            f"{OLLAMA_URL}/api/generate",
-            data=json.dumps(payload).encode(),
-            headers={"Content-Type": "application/json"},
-            method="POST",
-        )
-        try:
-            with urlopen(req, timeout=120) as resp:
-                raw = json.loads(resp.read()).get("response", "{}")
-            if isinstance(raw, str):
-                data = json.loads(raw)
-            else:
-                data = raw
-            if not data or not any(data.get(k) for k in ("summary", "meeting_topic", "decisions")):
-                raise ValueError(f"Empty MoM JSON from Ollama model {model}")
-            return _apply_recorded_date(
-                _finalize_mom(data, speaker_names=speaker_names),
-                recorded_at,
-            )
-        except Exception as exc:
-            last_error = exc
-            logger.warning("Ollama MoM generation failed for model %s (%s).", model, exc)
-            continue
-
-    logger.warning("All Ollama models failed (%s); using heuristic fallback.", last_error)
-    return _finalize_mom(
-        _fallback_mom(transcript, recorded_at=recorded_at, speaker_names=speaker_names),
-        speaker_names=speaker_names,
-    )
-
-
 def generate_mom_structured(
     transcript: str,
     *,
@@ -440,6 +357,14 @@ def generate_mom_structured(
     if not speaker_names:
         speaker_names = _extract_speaker_names(transcript)
 
+    api_key = os.environ.get("OPENAI_API_KEY", "")
+    if not api_key:
+        logger.warning("OPENAI_API_KEY not set — using heuristic MoM fallback.")
+        return _finalize_mom(
+            _fallback_mom(transcript, recorded_at=recorded_at, speaker_names=speaker_names),
+            speaker_names=speaker_names,
+        )
+
     user_content = _build_mom_user_message(
         transcript,
         recorded_at=recorded_at,
@@ -447,37 +372,31 @@ def generate_mom_structured(
         speaker_names=speaker_names,
     )
 
-    api_key = os.environ.get("OPENAI_API_KEY", "")
-    if api_key:
-        try:
-            response = _client.chat.completions.create(
-                model="gpt-4o-mini",
-                response_format={"type": "json_object"},
-                messages=[
-                    {"role": "system", "content": MOM_SYSTEM_PROMPT},
-                    {"role": "user", "content": user_content},
-                ],
-                temperature=0.3,
-            )
-            data = json.loads(response.choices[0].message.content.strip())
-            return _apply_recorded_date(
-                _finalize_mom(data, speaker_names=speaker_names),
-                recorded_at,
-            )
-        except Exception as exc:
-            logger.warning("OpenAI MoM generation failed (%s); falling back to Ollama.", exc)
-
-    return _generate_mom_with_ollama(
-        transcript,
-        recorded_at=recorded_at,
-        plain_transcript=plain_transcript,
-        speaker_names=speaker_names,
-    )
+    try:
+        response = _get_client().chat.completions.create(
+            model="gpt-4o-mini",
+            response_format={"type": "json_object"},
+            messages=[
+                {"role": "system", "content": MOM_SYSTEM_PROMPT},
+                {"role": "user", "content": user_content},
+            ],
+            temperature=0.3,
+        )
+        data = json.loads(response.choices[0].message.content.strip())
+        return _apply_recorded_date(
+            _finalize_mom(data, speaker_names=speaker_names),
+            recorded_at,
+        )
+    except Exception as exc:
+        logger.warning("OpenAI MoM generation failed (%s); using heuristic fallback.", exc)
+        return _finalize_mom(
+            _fallback_mom(transcript, recorded_at=recorded_at, speaker_names=speaker_names),
+            speaker_names=speaker_names,
+        )
 
 
 def generate_mom(transcript: str) -> str:
     from services.meeting_storage import mom_to_markdown
-
     return mom_to_markdown(generate_mom_structured(transcript))
 
 
@@ -487,30 +406,20 @@ def generate_summary(transcript: str) -> str:
         raise ValueError("Transcript is empty.")
 
     api_key = os.environ.get("OPENAI_API_KEY", "")
-    if api_key:
-        try:
-            response = _client.chat.completions.create(
-                model="gpt-4o-mini",
-                messages=[
-                    {"role": "system", "content": SUMMARY_SYSTEM_PROMPT},
-                    {"role": "user", "content": f"Transcript:\n{transcript}"},
-                ],
-                temperature=0.3,
-            )
-            return response.choices[0].message.content.strip()
-        except Exception:
-            pass
+    if not api_key:
+        logger.warning("OPENAI_API_KEY not set — cannot generate summary.")
+        return "Summary unavailable: OPENAI_API_KEY is not configured."
 
-    payload = {
-        "model": OLLAMA_MODEL,
-        "prompt": f"{SUMMARY_SYSTEM_PROMPT}\n\nTranscript:\n{transcript}\n\nSummary:",
-        "stream": False,
-    }
-    req = Request(
-        f"{OLLAMA_URL}/api/generate",
-        data=json.dumps(payload).encode(),
-        headers={"Content-Type": "application/json"},
-        method="POST",
-    )
-    with urlopen(req, timeout=180) as resp:
-        return json.loads(resp.read()).get("response", "").strip()
+    try:
+        response = _get_client().chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": SUMMARY_SYSTEM_PROMPT},
+                {"role": "user", "content": f"Transcript:\n{transcript}"},
+            ],
+            temperature=0.3,
+        )
+        return response.choices[0].message.content.strip()
+    except Exception as exc:
+        logger.error("OpenAI summary generation failed: %s", exc)
+        raise

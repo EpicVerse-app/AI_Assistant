@@ -1,19 +1,25 @@
 """Turn diarized Speaker N labels into a conversational transcript with names."""
 
 import json
+import logging
 import os
 import re
-from urllib.request import Request, urlopen
 
 from dotenv import load_dotenv
 from openai import OpenAI
 
 load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), "../utils/.env"))
 
-_client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY", ""))
+logger = logging.getLogger(__name__)
 
-OLLAMA_URL = "http://localhost:11434"
-OLLAMA_MODEL = "gemma3:1b"
+_client: OpenAI | None = None
+
+
+def _get_client() -> OpenAI:
+    global _client
+    if _client is None:
+        _client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY", ""))
+    return _client
 
 SPEAKER_MAP_PROMPT = """Analyze this diarized meeting transcript and map each speaker label to a real person name when possible.
 
@@ -33,7 +39,6 @@ Rules:
 
 
 def _merge_consecutive_speakers(diarized_text: str) -> str:
-    """Merge consecutive lines from the same speaker."""
     lines = [line.strip() for line in diarized_text.splitlines() if line.strip()]
     if not lines:
         return diarized_text
@@ -68,9 +73,7 @@ def _merge_consecutive_speakers(diarized_text: str) -> str:
 def _apply_speaker_map(text: str, speaker_map: dict[str, str]) -> str:
     output = text
     for old_label, new_name in sorted(
-        speaker_map.items(),
-        key=lambda item: len(item[0]),
-        reverse=True,
+        speaker_map.items(), key=lambda item: len(item[0]), reverse=True
     ):
         new_name = (new_name or old_label).strip()
         if not new_name or new_name.lower() in {"none", "null", "unknown"}:
@@ -86,7 +89,7 @@ def _infer_speaker_map_openai(diarized_text: str) -> dict[str, str] | None:
     if not api_key:
         return None
     try:
-        response = _client.chat.completions.create(
+        response = _get_client().chat.completions.create(
             model="gpt-4o-mini",
             response_format={"type": "json_object"},
             messages=[
@@ -98,36 +101,17 @@ def _infer_speaker_map_openai(diarized_text: str) -> dict[str, str] | None:
         data = json.loads(response.choices[0].message.content.strip())
         raw_map = data.get("speaker_map") or {}
         return {str(k): str(v) for k, v in raw_map.items()}
-    except Exception:
-        return None
-
-
-def _infer_speaker_map_ollama(diarized_text: str) -> dict[str, str] | None:
-    prompt = f"{SPEAKER_MAP_PROMPT}\n\nTranscript:\n{diarized_text.strip()}\n\nJSON:"
-    payload = {"model": OLLAMA_MODEL, "prompt": prompt, "stream": False, "format": "json"}
-    req = Request(
-        f"{OLLAMA_URL}/api/generate",
-        data=json.dumps(payload).encode(),
-        headers={"Content-Type": "application/json"},
-        method="POST",
-    )
-    try:
-        with urlopen(req, timeout=90) as resp:
-            raw = json.loads(resp.read()).get("response", "{}")
-        data = json.loads(raw) if isinstance(raw, str) else raw
-        raw_map = data.get("speaker_map") or {}
-        return {str(k): str(v) for k, v in raw_map.items()}
-    except Exception:
+    except Exception as exc:
+        logger.warning("OpenAI speaker map inference failed: %s", exc)
         return None
 
 
 def _heuristic_name_map(diarized_text: str) -> dict[str, str]:
-    """Find 'hi Name' / 'welcome Name' patterns and suggest likely mappings."""
-    names = re.findall(
+    """Find 'hi Name' / 'welcome Name' patterns to suggest speaker mappings."""
+    re.findall(
         r"\b(?:hi|hello|welcome|thanks|thank you)\s+([A-Z][a-z]+)\b",
         diarized_text,
     )
-    # Heuristic only — returned map stays empty unless we add stronger rules.
     return {}
 
 
@@ -137,11 +121,7 @@ def build_conversational_transcript(diarized_text: str | None) -> str | None:
         return None
 
     merged = _merge_consecutive_speakers(diarized_text.strip())
-    speaker_map = (
-        _infer_speaker_map_openai(merged)
-        or _infer_speaker_map_ollama(merged)
-        or _heuristic_name_map(merged)
-    )
+    speaker_map = _infer_speaker_map_openai(merged) or _heuristic_name_map(merged)
 
     if speaker_map:
         return _apply_speaker_map(merged, speaker_map).strip()

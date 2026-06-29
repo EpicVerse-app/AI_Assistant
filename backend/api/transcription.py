@@ -18,7 +18,6 @@ from services.meeting_storage import (
     load_error_message,
     load_mom_json,
     load_mom_markdown,
-    meeting_dir,
     read_transcript,
     read_translation,
 )
@@ -217,7 +216,6 @@ def list_meetings(
             "summary_preview": summary_preview,
             "transcript_preview": transcript_preview,
             "has_summary": has_summary,
-            "output_folder": str(meeting_dir(m.meeting_id)),
         })
         results.append(item)
     return {"meetings": results}
@@ -275,7 +273,6 @@ def get_meeting_detail(
         "summary": summary,
         "mom": mom,
         "error_message": load_error_message(meeting_id),
-        "output_folder": str(meeting_dir(meeting_id)),
     }
 
 

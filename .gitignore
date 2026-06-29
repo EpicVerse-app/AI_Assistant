@@ -58,6 +58,10 @@ backend/utils/.env
 backend/audio/
 backend/uploads/
 backend/outputs/
+backend/database/ai_assistant.db
+*.db
+*.db-journal
+backend/services/outputs/
 
 # IDE
 .cursor/

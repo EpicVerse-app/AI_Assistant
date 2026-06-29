@@ -7,7 +7,6 @@ from database.models import Meeting, User
 from services.meeting_storage import (
     load_mom_json,
     load_mom_markdown,
-    meeting_dir,
     mom_to_markdown,
     read_transcript,
     read_translation,
@@ -81,5 +80,4 @@ def get_summary(
         "meeting_id": meeting_id,
         "summary": markdown,
         "mom": mom_data,
-        "folder": str(meeting_dir(meeting_id)),
     }
