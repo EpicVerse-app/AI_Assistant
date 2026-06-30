@@ -9,6 +9,7 @@ from pathlib import Path
 from services.storage.base import AudioStorage
 from services.storage.local import LocalAudioStorage
 from services.storage.s3 import S3AudioStorage
+from utils.storage_env import aws_region, storage_bucket
 
 _BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
@@ -19,13 +20,16 @@ def get_audio_storage() -> AudioStorage:
     prefix = os.environ.get("STORAGE_AUDIO_PREFIX", "audio").strip() or "audio"
 
     if backend == "s3":
-        bucket = os.environ.get("STORAGE_BUCKET", "").strip()
+        bucket = storage_bucket()
         if not bucket:
-            raise RuntimeError("STORAGE_BACKEND=s3 requires STORAGE_BUCKET.")
+            raise RuntimeError(
+                "STORAGE_BACKEND=s3 requires STORAGE_BUCKET "
+                "(or legacy S3_BUCKET_NAME)."
+            )
         return S3AudioStorage(
             bucket,
             prefix=prefix,
-            region=os.environ.get("AWS_REGION"),
+            region=aws_region(),
             endpoint_url=os.environ.get("AWS_ENDPOINT_URL") or None,
         )
 

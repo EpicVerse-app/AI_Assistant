@@ -18,6 +18,7 @@ from api.transcription import router as transcription_router
 from api.translation import router as translation_router
 from api.summary import router as summary_router
 from services.storage import storage_backend_name
+from utils.storage_env import check_s3_storage
 from utils.api_auth import ApiKeyMiddleware
 from utils.jwt_auth import get_current_user
 from utils.rate_limit import limiter
@@ -35,6 +36,13 @@ app = FastAPI(
     description="Transcribe, translate and generate MoM for meetings.",
     version="1.0.0",
 )
+
+# Auto-migrate on startup so local dev works without running alembic manually.
+# In Docker/ECS this is a no-op because the CMD already ran `alembic upgrade head`.
+@app.on_event("startup")
+def on_startup():
+    from database.db import init_db
+    init_db()
 
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
@@ -90,8 +98,15 @@ def root():
 @app.get("/health")
 def health(db: Session = Depends(get_db)):
     db.execute(text("SELECT 1"))
-    return {
+    storage_status, storage_detail = check_s3_storage()
+    payload = {
         "status": "ok",
         "database": "ok",
         "storage_backend": storage_backend_name(),
+        "storage": storage_status,
     }
+    if storage_detail:
+        payload["storage_detail"] = storage_detail
+    if storage_status == "error":
+        payload["status"] = "degraded"
+    return payload

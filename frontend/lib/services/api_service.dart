@@ -8,7 +8,7 @@ import '../utils/date_time_utils.dart';
 import 'auth_service.dart';
 
 class ApiService {
-  static const String baseUrl = 'https://ai-assistant-api-9xhb.onrender.com';
+  static const String baseUrl = 'https://api.orzen.in';
   static const Duration _timeout = Duration(seconds: 120);
 
   /// Optional legacy server key: flutter run --dart-define=API_KEY=...

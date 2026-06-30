@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 import shutil
 import tempfile
 from contextlib import contextmanager
@@ -10,6 +9,7 @@ from pathlib import Path
 from typing import Iterator
 
 from services.storage.base import AudioStorage
+from utils.storage_env import aws_region, boto3_session_kwargs
 
 
 class S3AudioStorage(AudioStorage):
@@ -25,11 +25,10 @@ class S3AudioStorage(AudioStorage):
 
         self._bucket = bucket
         self._prefix = prefix.strip("/")
-        session = boto3.session.Session(
-            region_name=region or os.environ.get("AWS_REGION", "us-east-1"),
-            aws_access_key_id=os.environ.get("AWS_ACCESS_KEY_ID") or None,
-            aws_secret_access_key=os.environ.get("AWS_SECRET_ACCESS_KEY") or None,
-        )
+        session_kwargs = boto3_session_kwargs()
+        if region:
+            session_kwargs["region_name"] = region
+        session = boto3.session.Session(**session_kwargs)
         self._client = session.client("s3", endpoint_url=endpoint_url or None)
 
     def _key(self, meeting_id: str, stored_reference: str) -> str:
