@@ -9,6 +9,10 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
+from botocore.exceptions import ClientError as _BotocoreClientError
+
+from utils.storage_env import s3_client, storage_bucket
+
 _BASE_DIR = Path(__file__).resolve().parent.parent
 MEETINGS_ROOT = _BASE_DIR / "outputs" / "meetings"
 MEETINGS_PREFIX = os.environ.get("STORAGE_MEETINGS_PREFIX", "meetings").strip() or "meetings"
@@ -24,20 +28,16 @@ def _object_key(meeting_id: str, filename: str) -> str:
 
 @lru_cache(maxsize=1)
 def _s3_client():
-    import boto3
-
-    session = boto3.session.Session(
-        region_name=os.environ.get("AWS_REGION", "us-east-1"),
-        aws_access_key_id=os.environ.get("AWS_ACCESS_KEY_ID") or None,
-        aws_secret_access_key=os.environ.get("AWS_SECRET_ACCESS_KEY") or None,
-    )
-    return session.client("s3", endpoint_url=os.environ.get("AWS_ENDPOINT_URL") or None)
+    return s3_client()
 
 
 def _bucket() -> str:
-    bucket = os.environ.get("STORAGE_BUCKET", "").strip()
+    bucket = storage_bucket()
     if not bucket:
-        raise RuntimeError("STORAGE_BACKEND=s3 requires STORAGE_BUCKET.")
+        raise RuntimeError(
+            "STORAGE_BACKEND=s3 requires STORAGE_BUCKET "
+            "(or legacy S3_BUCKET_NAME)."
+        )
     return bucket
 
 
@@ -86,7 +86,7 @@ def read_text(meeting_id: str, filename: str, reference: str | None = None) -> s
         try:
             response = _s3_client().get_object(Bucket=_bucket(), Key=key)
             return response["Body"].read().decode("utf-8")
-        except _s3_client().exceptions.ClientError as exc:
+        except _BotocoreClientError as exc:
             code = exc.response.get("Error", {}).get("Code", "")
             if code in ("404", "NoSuchKey", "NotFound"):
                 return None
