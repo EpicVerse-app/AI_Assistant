@@ -1,5 +1,9 @@
+import 'dart:io';
+
 import 'package:flutter/foundation.dart';
+import 'package:http/http.dart' as http;
 import 'package:just_audio/just_audio.dart';
+import 'package:path_provider/path_provider.dart';
 
 import 'api_service.dart';
 import 'local_audio_storage.dart';
@@ -29,6 +33,7 @@ class MeetingAudioController extends ChangeNotifier {
     notifyListeners();
 
     try {
+      // 1. Try the permanent local copy saved at upload time.
       final localPath = await LocalAudioStorage.getLocalPath(meetingId);
       if (localPath != null) {
         await _player.setFilePath(localPath);
@@ -38,6 +43,7 @@ class MeetingAudioController extends ChangeNotifier {
         return;
       }
 
+      // 2. Check the server has audio for this meeting.
       final info = await ApiService.getAudioInfo(meetingId);
       if (info == null) {
         _available = false;
@@ -46,12 +52,26 @@ class MeetingAudioController extends ChangeNotifier {
         return;
       }
 
-      await _player.setAudioSource(
-        AudioSource.uri(
+      // 3. Download the file to a temp path so ExoPlayer can seek it reliably
+      //    (streaming via AudioSource.uri requires Range-request support which
+      //    our backend does not implement).
+      final tmpDir = await getTemporaryDirectory();
+      final tmpFile = File('${tmpDir.path}/audio_$meetingId.wav');
+
+      if (!tmpFile.existsSync()) {
+        final response = await http.get(
           Uri.parse(ApiService.audioPlayUrl(meetingId)),
           headers: ApiService.authHeaders,
-        ),
-      );
+        );
+        if (response.statusCode != 200) {
+          _available = false;
+          _error = 'Server returned ${response.statusCode} for audio.';
+          return;
+        }
+        await tmpFile.writeAsBytes(response.bodyBytes);
+      }
+
+      await _player.setFilePath(tmpFile.path);
       _initialized = true;
       _available = true;
       _isLocal = false;

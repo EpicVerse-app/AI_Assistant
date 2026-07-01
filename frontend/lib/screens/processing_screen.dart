@@ -4,15 +4,17 @@ import 'package:flutter/material.dart';
 
 import '../models/meeting.dart';
 import '../services/api_service.dart';
+import '../services/folder_service.dart';
 import '../theme/app_theme.dart';
 import 'mom_result_screen.dart';
 
 enum _Step { transcribing, translating, generating, done, failed }
 
 class ProcessingScreen extends StatefulWidget {
-  const ProcessingScreen({super.key, required this.meetingId});
+  const ProcessingScreen({super.key, required this.meetingId, this.folderId});
 
   final String meetingId;
+  final String? folderId;
 
   @override
   State<ProcessingScreen> createState() => _ProcessingScreenState();
@@ -54,6 +56,12 @@ class _ProcessingScreenState extends State<ProcessingScreen> {
         _step = _Step.done;
         _meeting = fullMeeting;
       });
+
+      // Auto-save to folder if recording was started from inside a folder
+      if (widget.folderId != null) {
+        await FolderService.instance
+            .addMeeting(widget.folderId!, widget.meetingId);
+      }
 
       if (mounted) {
         await Future<void>.delayed(const Duration(milliseconds: 600));

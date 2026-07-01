@@ -17,7 +17,9 @@ import '../utils/mom_parser.dart';
 import 'processing_screen.dart';
 
 class RecordingScreen extends StatefulWidget {
-  const RecordingScreen({super.key});
+  const RecordingScreen({super.key, this.folderId});
+
+  final String? folderId;
 
   @override
   State<RecordingScreen> createState() => _RecordingScreenState();
@@ -204,7 +206,7 @@ class _RecordingScreenState extends State<RecordingScreen> {
         setState(() => _isLoading = false);
         Navigator.of(context).push(
           MaterialPageRoute<void>(
-            builder: (_) => ProcessingScreen(meetingId: meetingId),
+            builder: (_) => ProcessingScreen(meetingId: meetingId, folderId: widget.folderId),
           ),
         );
       }
@@ -266,7 +268,7 @@ class _RecordingScreenState extends State<RecordingScreen> {
         setState(() => _isLoading = false);
         Navigator.of(context).push(
           MaterialPageRoute<void>(
-            builder: (_) => ProcessingScreen(meetingId: meetingId),
+            builder: (_) => ProcessingScreen(meetingId: meetingId, folderId: widget.folderId),
           ),
         );
       }

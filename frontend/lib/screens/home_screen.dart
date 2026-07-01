@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 
 import '../services/api_service.dart';
+import '../services/auth_service.dart';
 import '../services/offline_queue.dart';
 import '../theme/app_theme.dart';
 import '../utils/date_time_utils.dart';
-import '../widgets/app_logo.dart';
 import 'mom_result_screen.dart';
 import 'processing_screen.dart';
 
@@ -28,6 +28,12 @@ class _HomeScreenState extends State<HomeScreen> {
   List<Map<String, dynamic>> _meetings = [];
   bool _loadingMeetings = true;
   String? _loadError;
+  String _greeting() {
+    final hour = DateTime.now().hour;
+    if (hour < 12) return 'Good Morning';
+    if (hour < 17) return 'Good Afternoon';
+    return 'Good Evening';
+  }
 
   @override
   void initState() {
@@ -160,11 +166,25 @@ class _HomeScreenState extends State<HomeScreen> {
     return Scaffold(
       backgroundColor: Colors.transparent,
       appBar: AppBar(
-        title: const Row(
+        toolbarHeight: 72,
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            AppLogo(size: 32),
-            SizedBox(width: 12),
-            Text('AI Memory Assistant'),
+            Text(
+              _greeting(),
+              style: const TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w400,
+                color: AppTheme.secondaryGray,
+              ),
+            ),
+            Text(
+              AuthService.instance.user?.displayName ?? 'User',
+              style: const TextStyle(
+                fontSize: 22,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
           ],
         ),
         centerTitle: false,
@@ -225,26 +245,46 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ),
 
-            // Search bar
-            TextField(
-              readOnly: true,
-              onTap: widget.onSearchTap,
-              decoration: const InputDecoration(
-                hintText: 'Search memories',
-                prefixIcon: Icon(Icons.search),
-                isDense: true,
+            // New meeting button
+            GestureDetector(
+              onTap: widget.onNewMeetingTap,
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFF8D6736), Color(0xFFB18850)],
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                  ),
+                  borderRadius: BorderRadius.circular(50),
+                  boxShadow: [
+                    BoxShadow(
+                      color: const Color(0xFF8D6736).withOpacity(0.4),
+                      blurRadius: 8,
+                      offset: const Offset(0, 3),
+                    ),
+                  ],
+                ),
+                child: const Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.add, color: Colors.white, size: 20),
+                    SizedBox(width: 8),
+                    Text(
+                      'New Meeting',
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
-            const SizedBox(height: 16),
 
-            // New meeting button
-            FilledButton.icon(
-              onPressed: widget.onNewMeetingTap,
-              icon: const Icon(Icons.add),
-              label: const Text('New Meeting'),
-            ),
-
-            const SizedBox(height: 32),
+            const SizedBox(height: 28),
             const Text(
               'RECENT MEETINGS',
               style: TextStyle(
@@ -333,6 +373,8 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 }
+
+// ── Meeting card ──────────────────────────────────────────────────────────────
 
 class _MeetingCard extends StatelessWidget {
   const _MeetingCard({
