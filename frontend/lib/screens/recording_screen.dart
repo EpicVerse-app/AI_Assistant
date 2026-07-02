@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:math';
 
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:file_picker/file_picker.dart';
@@ -30,6 +31,7 @@ class _RecordingScreenState extends State<RecordingScreen> {
       BackgroundRecordingService.instance;
   final AudioPlayer _previewPlayer = AudioPlayer();
   bool _isRecording = false;
+  bool _isPaused = false;
   bool _isLoading = false;
   bool _previewPlaying = false;
   Duration _elapsed = Duration.zero;
@@ -57,6 +59,7 @@ class _RecordingScreenState extends State<RecordingScreen> {
     } else if (type == 'error' && mounted) {
       setState(() {
         _isRecording = false;
+        _isPaused = false;
         _recordedPath = null;
         _elapsed = Duration.zero;
       });
@@ -64,7 +67,14 @@ class _RecordingScreenState extends State<RecordingScreen> {
         SnackBar(content: Text(event['message']?.toString() ?? 'Recording error')),
       );
     } else if (type == 'started' && mounted) {
-      setState(() => _isRecording = true);
+      setState(() {
+        _isRecording = true;
+        _isPaused = false;
+      });
+    } else if (type == 'paused' && mounted) {
+      setState(() => _isPaused = true);
+    } else if (type == 'resumed' && mounted) {
+      setState(() => _isPaused = false);
     }
   }
 
@@ -73,6 +83,7 @@ class _RecordingScreenState extends State<RecordingScreen> {
     if (!mounted) return;
     setState(() {
       _isRecording = false;
+      _isPaused = false;
       _recordedPath = path;
     });
     if (path != null) {
@@ -94,6 +105,7 @@ class _RecordingScreenState extends State<RecordingScreen> {
       _previewPlaying = false;
       _recordedPath = null;
       _elapsed = Duration.zero;
+      _isPaused = false;
     });
 
     try {
@@ -125,6 +137,22 @@ class _RecordingScreenState extends State<RecordingScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Could not stop recording: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _togglePause() async {
+    try {
+      if (_isPaused) {
+        await _recordingService.resume();
+      } else {
+        await _recordingService.pause();
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not update recording: $e')),
         );
       }
     }
@@ -341,7 +369,7 @@ class _RecordingScreenState extends State<RecordingScreen> {
                                   const SizedBox(height: 8),
                                   Text(
                                     _isRecording
-                                        ? 'Recording...'
+                                        ? (_isPaused ? 'Paused' : 'Recording...')
                                         : 'Ready to record',
                                     textAlign: TextAlign.center,
                                     style: const TextStyle(
@@ -350,115 +378,127 @@ class _RecordingScreenState extends State<RecordingScreen> {
                                     ),
                                   ),
                                   if (_isRecording) ...[
-                                    const SizedBox(height: 4),
-                                    const Text(
-                                      'You can lock the screen — recording continues',
-                                      textAlign: TextAlign.center,
-                                      style: TextStyle(
-                                        fontSize: 13,
-                                        color: AppTheme.secondaryGray,
-                                      ),
-                                    ),
+                                    const SizedBox(height: 24),
+                                    _RecordingWaveform(isActive: !_isPaused),
                                   ],
                                   const SizedBox(height: 56),
-                                  GestureDetector(
-                                    onTap: _isRecording
-                                        ? _stopRecording
-                                        : (_recordedPath == null
-                                            ? _startRecording
-                                            : null),
-                                    child: AnimatedContainer(
-                                      duration:
-                                          const Duration(milliseconds: 200),
-                                      width: 88,
-                                      height: 88,
-                                      decoration: BoxDecoration(
-                                        shape: BoxShape.circle,
-                                        color: _isRecording
-                                            ? const Color(0xFFFF3B30)
-                                            : AppTheme.gradientBottom,
-                                      ),
-                                      child: Icon(
-                                        _isRecording
-                                            ? Icons.stop_rounded
-                                            : Icons.mic_rounded,
-                                        color: Colors.white,
-                                        size: 40,
-                                      ),
+                                  if (_isRecording)
+                                    Row(
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.center,
+                                      children: [
+                                        _RoundIconButton(
+                                          onTap: _togglePause,
+                                          icon: _isPaused
+                                              ? Icons.play_arrow_rounded
+                                              : Icons.pause_rounded,
+                                          label: _isPaused ? 'Resume' : 'Pause',
+                                        ),
+                                        const SizedBox(width: 40),
+                                        _RoundIconButton(
+                                          onTap: _stopRecording,
+                                          icon: Icons.stop_rounded,
+                                          label: 'Stop',
+                                        ),
+                                      ],
+                                    )
+                                  else
+                                    _RoundIconButton(
+                                      onTap: _recordedPath == null
+                                          ? _startRecording
+                                          : null,
+                                      icon: Icons.mic_rounded,
+                                      label: _recordedPath != null
+                                          ? 'Review your recording below'
+                                          : 'Tap the mic to start recording',
                                     ),
-                                  ),
-                                  const SizedBox(height: 16),
-                                  Text(
-                                    _isRecording
-                                        ? 'Tap to stop'
-                                        : (_recordedPath != null
-                                            ? 'Review your recording below'
-                                            : 'Tap to start'),
-                                    textAlign: TextAlign.center,
-                                    style: const TextStyle(
-                                      fontSize: 14,
-                                      color: AppTheme.secondaryGray,
-                                    ),
-                                  ),
                                 ],
                               ),
                             ),
                             if (_recordedPath != null && !_isRecording) ...[
                         const SizedBox(height: 32),
-                        Container(
-                          width: double.infinity,
-                          padding: const EdgeInsets.all(20),
-                          decoration: AppTheme.cardDecoration,
-                          child: Column(
-                            children: [
-                              GestureDetector(
-                                onTap: _togglePreview,
-                                child: Container(
-                                  width: 56,
-                                  height: 56,
-                                  decoration: const BoxDecoration(
-                                    color: AppTheme.primaryPurple,
-                                    shape: BoxShape.circle,
+                        _SlideUpFadeIn(
+                          key: ValueKey(_recordedPath),
+                          child: Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.all(20),
+                            decoration: AppTheme.cardDecoration,
+                            child: Column(
+                              children: [
+                                GestureDetector(
+                                  onTap: _togglePreview,
+                                  child: Container(
+                                    width: 56,
+                                    height: 56,
+                                    decoration: const BoxDecoration(
+                                      gradient: AppTheme.addButtonGradient,
+                                      shape: BoxShape.circle,
+                                    ),
+                                    child: Icon(
+                                      _previewPlaying
+                                          ? Icons.pause
+                                          : Icons.play_arrow,
+                                      color: Colors.white,
+                                      size: 28,
+                                    ),
                                   ),
-                                  child: Icon(
-                                    _previewPlaying
-                                        ? Icons.pause
-                                        : Icons.play_arrow,
-                                    color: Colors.white,
-                                    size: 28,
+                                ),
+                                const SizedBox(height: 12),
+                                const Text(
+                                  'Recording saved',
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w600,
                                   ),
                                 ),
-                              ),
-                              const SizedBox(height: 12),
-                              const Text(
-                                'Recording saved',
-                                style: TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w600,
+                                const SizedBox(height: 4),
+                                Text(
+                                  'Duration: ${MomParser.formatDuration(_elapsed.inSeconds)}',
+                                  style: const TextStyle(
+                                    color: AppTheme.secondaryGray,
+                                  ),
                                 ),
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                'Duration: ${MomParser.formatDuration(_elapsed.inSeconds)}',
-                                style: const TextStyle(
-                                  color: AppTheme.secondaryGray,
+                                const SizedBox(height: 20),
+                                GestureDetector(
+                                  onTap: _uploadAndProcess,
+                                  child: Container(
+                                    width: double.infinity,
+                                    padding: const EdgeInsets.symmetric(
+                                        vertical: 14),
+                                    decoration: BoxDecoration(
+                                      gradient: AppTheme.addButtonGradient,
+                                      borderRadius: BorderRadius.circular(14),
+                                      boxShadow: [
+                                        BoxShadow(
+                                          color: AppTheme.addButtonStart
+                                              .withValues(alpha: 0.4),
+                                          blurRadius: 8,
+                                          offset: const Offset(0, 3),
+                                        ),
+                                      ],
+                                    ),
+                                    child: const Text(
+                                      'Upload & Generate MoM',
+                                      textAlign: TextAlign.center,
+                                      style: TextStyle(
+                                        fontSize: 17,
+                                        fontWeight: FontWeight.w600,
+                                        letterSpacing: -0.2,
+                                        color: Colors.white,
+                                      ),
+                                    ),
+                                  ),
                                 ),
-                              ),
-                              const SizedBox(height: 20),
-                              FilledButton(
-                                onPressed: _uploadAndProcess,
-                                style: FilledButton.styleFrom(
-                                  minimumSize: const Size(double.infinity, 48),
-                                  backgroundColor: AppTheme.primaryPurple,
+                                const SizedBox(height: 8),
+                                TextButton(
+                                  onPressed: _discardRecording,
+                                  style: TextButton.styleFrom(
+                                    foregroundColor: AppTheme.addButtonStart,
+                                  ),
+                                  child: const Text('Discard & re-record'),
                                 ),
-                                child: const Text('Upload & Generate MoM'),
-                              ),
-                              const SizedBox(height: 8),
-                              TextButton(
-                                onPressed: _discardRecording,
-                                child: const Text('Discard & re-record'),
-                              ),
-                            ],
+                              ],
+                            ),
                           ),
                         ),
                       ],
@@ -513,5 +553,184 @@ class _RecordingScreenState extends State<RecordingScreen> {
       return WithForegroundTask(child: content);
     }
     return content;
+  }
+}
+
+/// Slides its child up from below while fading it in — used to animate the
+/// "Recording saved" card into view once a recording is ready for review.
+class _SlideUpFadeIn extends StatefulWidget {
+  const _SlideUpFadeIn({super.key, required this.child});
+
+  final Widget child;
+
+  @override
+  State<_SlideUpFadeIn> createState() => _SlideUpFadeInState();
+}
+
+class _SlideUpFadeInState extends State<_SlideUpFadeIn>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  late final Animation<Offset> _offset;
+  late final Animation<double> _fade;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 520),
+    );
+    _offset = Tween<Offset>(
+      begin: const Offset(0, 0.55),
+      end: Offset.zero,
+    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeOutBack));
+    _fade = CurvedAnimation(
+      parent: _controller,
+      curve: const Interval(0.0, 0.6, curve: Curves.easeOut),
+    );
+    _controller.forward();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SlideTransition(
+      position: _offset,
+      child: FadeTransition(opacity: _fade, child: widget.child),
+    );
+  }
+}
+
+/// A dark circular icon button with a small caption beneath it, matching
+/// the mic / pause / stop controls on the recording screen.
+class _RoundIconButton extends StatelessWidget {
+  const _RoundIconButton({
+    required this.onTap,
+    required this.icon,
+    required this.label,
+  });
+
+  final VoidCallback? onTap;
+  final IconData icon;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        GestureDetector(
+          onTap: onTap,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 200),
+            width: 76,
+            height: 76,
+            decoration: const BoxDecoration(
+              shape: BoxShape.circle,
+              color: AppTheme.gradientBottom,
+            ),
+            child: Icon(icon, color: Colors.white, size: 34),
+          ),
+        ),
+        const SizedBox(height: 12),
+        Text(
+          label,
+          textAlign: TextAlign.center,
+          style: const TextStyle(
+            fontSize: 14,
+            color: AppTheme.secondaryGray,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// Animated bar waveform shown while a recording is in progress.
+/// Freezes (and dims) when [isActive] is false, e.g. while paused.
+class _RecordingWaveform extends StatefulWidget {
+  const _RecordingWaveform({required this.isActive});
+
+  final bool isActive;
+
+  @override
+  State<_RecordingWaveform> createState() => _RecordingWaveformState();
+}
+
+class _RecordingWaveformState extends State<_RecordingWaveform>
+    with SingleTickerProviderStateMixin {
+  static const _barCount = 27;
+
+  late final AnimationController _controller;
+  late final List<double> _phases;
+  late final List<double> _speeds;
+
+  @override
+  void initState() {
+    super.initState();
+    final random = Random();
+    _phases = List.generate(_barCount, (_) => random.nextDouble() * 2 * pi);
+    _speeds = List.generate(_barCount, (_) => 0.7 + random.nextDouble() * 0.9);
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 1),
+    );
+    if (widget.isActive) _controller.repeat();
+  }
+
+  @override
+  void didUpdateWidget(covariant _RecordingWaveform oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.isActive && !_controller.isAnimating) {
+      _controller.repeat();
+    } else if (!widget.isActive && _controller.isAnimating) {
+      _controller.stop();
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    const height = 48.0;
+    return SizedBox(
+      height: height,
+      child: AnimatedBuilder(
+        animation: _controller,
+        builder: (context, _) {
+          final t = _controller.value * 2 * pi;
+          return Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: List.generate(_barCount, (i) {
+              final wave = widget.isActive
+                  ? (sin(t * _speeds[i] + _phases[i]) + 1) / 2
+                  : 0.0;
+              final heightFactor = widget.isActive ? 0.18 + 0.82 * wave : 0.12;
+              return AnimatedContainer(
+                duration: const Duration(milliseconds: 150),
+                width: 3,
+                height: (height * heightFactor).clamp(4.0, height),
+                margin: const EdgeInsets.symmetric(horizontal: 2.5),
+                decoration: BoxDecoration(
+                  color: AppTheme.addButtonStart
+                      .withValues(alpha: widget.isActive ? 0.9 : 0.3),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+              );
+            }),
+          );
+        },
+      ),
+    );
   }
 }

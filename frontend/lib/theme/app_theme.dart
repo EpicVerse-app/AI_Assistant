@@ -26,6 +26,15 @@ class AppTheme {
   static const Color primaryPurple = Color(0xFF6C5CE7);
   static const Color primaryPurpleLight = Color(0xFF4A3D66);
 
+  // "Add" action accent (FAB, New Meeting button) — gold/bronze gradient
+  static const Color addButtonStart = Color(0xFF8D6736);
+  static const Color addButtonEnd = Color(0xFFB18850);
+  static const LinearGradient addButtonGradient = LinearGradient(
+    colors: [addButtonStart, addButtonEnd],
+    begin: Alignment.topCenter,
+    end: Alignment.bottomCenter,
+  );
+
   static const Color statBlue = Color(0xFFD4AF6A);
   static const Color statGreen = Color(0xFF8FB86A);
   static const Color statOrange = Color(0xFFE8A54B);

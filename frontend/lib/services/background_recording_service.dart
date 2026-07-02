@@ -19,6 +19,8 @@ class BackgroundRecordingService {
   AudioRecorder? _iosRecorder;
   bool _initialized = false;
   DateTime? _startedAt;
+  DateTime? _pausedAt;
+  bool _isPaused = false;
   Timer? _iosTimer;
   final List<RecordingEventHandler> _listeners = [];
 
@@ -79,14 +81,30 @@ class BackgroundRecordingService {
     final type = event['event'] as String?;
     if (type == 'stopped') {
       _startedAt = null;
+      _pausedAt = null;
+      _isPaused = false;
       final path = event['path'] as String?;
       _stopCompleter?.complete(path);
       _stopCompleter = null;
       _emit(event);
     } else if (type == 'error') {
       _startedAt = null;
+      _pausedAt = null;
+      _isPaused = false;
+      _emit(event);
+    } else if (type == 'paused') {
+      _isPaused = true;
+      _pausedAt = DateTime.now();
+      _emit(event);
+    } else if (type == 'resumed') {
+      if (_pausedAt != null && _startedAt != null) {
+        _startedAt = _startedAt!.add(DateTime.now().difference(_pausedAt!));
+      }
+      _isPaused = false;
+      _pausedAt = null;
       _emit(event);
     } else if (type == 'tick' && _startedAt != null) {
+      if (_isPaused) return;
       _emit({
         'event': 'tick',
         'elapsed': DateTime.now().difference(_startedAt!),
@@ -112,9 +130,13 @@ class BackgroundRecordingService {
     }
   }
 
+  bool get isPaused => _isPaused;
+
   Future<void> start(String path) async {
     await _ensurePermissions();
     _startedAt = DateTime.now();
+    _pausedAt = null;
+    _isPaused = false;
 
     if (Platform.isAndroid) {
       final saved = await FlutterForegroundTask.saveData(
@@ -151,6 +173,8 @@ class BackgroundRecordingService {
   Future<String?> stop() async {
     _iosTimer?.cancel();
     _iosTimer = null;
+    _pausedAt = null;
+    _isPaused = false;
 
     if (Platform.isAndroid) {
       if (await FlutterForegroundTask.isRunningService) {
@@ -165,6 +189,50 @@ class BackgroundRecordingService {
     final path = await _recorder.stop();
     _startedAt = null;
     return path;
+  }
+
+  Future<void> pause() async {
+    if (_isPaused) return;
+
+    if (Platform.isAndroid) {
+      if (await FlutterForegroundTask.isRunningService) {
+        FlutterForegroundTask.sendDataToTask('pause');
+      }
+      return;
+    }
+
+    await _recorder.pause();
+    _iosTimer?.cancel();
+    _iosTimer = null;
+    _isPaused = true;
+    _pausedAt = DateTime.now();
+    _emit({'event': 'paused'});
+  }
+
+  Future<void> resume() async {
+    if (!_isPaused) return;
+
+    if (Platform.isAndroid) {
+      if (await FlutterForegroundTask.isRunningService) {
+        FlutterForegroundTask.sendDataToTask('resume');
+      }
+      return;
+    }
+
+    await _recorder.resume();
+    if (_pausedAt != null && _startedAt != null) {
+      _startedAt = _startedAt!.add(DateTime.now().difference(_pausedAt!));
+    }
+    _isPaused = false;
+    _pausedAt = null;
+    _iosTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (_startedAt == null) return;
+      _emit({
+        'event': 'tick',
+        'elapsed': DateTime.now().difference(_startedAt!),
+      });
+    });
+    _emit({'event': 'resumed'});
   }
 
   Future<bool> get isRecording async {
@@ -189,6 +257,8 @@ class BackgroundRecordingService {
     _iosTimer?.cancel();
     _iosTimer = null;
     _startedAt = null;
+    _pausedAt = null;
+    _isPaused = false;
     final recorder = _iosRecorder;
     if (recorder == null) return;
     try {

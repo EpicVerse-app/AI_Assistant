@@ -19,6 +19,8 @@ const recordConfig = RecordConfig(
 );
 
 const _stopButtonId = 'stop_recording';
+const _pauseButtonId = 'pause_recording';
+const _resumeButtonId = 'resume_recording';
 
 @pragma('vm:entry-point')
 void recordingTaskCallback() {
@@ -27,6 +29,7 @@ void recordingTaskCallback() {
 
 class RecordingTaskHandler extends TaskHandler {
   final AudioRecorder _recorder = AudioRecorder();
+  bool _isPaused = false;
 
   @override
   Future<void> onStart(DateTime timestamp, TaskStarter starter) async {
@@ -43,14 +46,9 @@ class RecordingTaskHandler extends TaskHandler {
     }
 
     await _recorder.start(recordConfig, path: path);
+    _isPaused = false;
 
-    FlutterForegroundTask.updateService(
-      notificationTitle: 'Recording meeting',
-      notificationText: 'Tap Stop in the app or notification to finish',
-      notificationButtons: const [
-        NotificationButton(id: _stopButtonId, text: 'Stop'),
-      ],
-    );
+    _updateNotification();
 
     FlutterForegroundTask.sendDataToMain({'event': 'started'});
   }
@@ -67,6 +65,10 @@ class RecordingTaskHandler extends TaskHandler {
   void onReceiveData(Object data) {
     if (data == 'stop') {
       _finishRecording();
+    } else if (data == 'pause') {
+      _pauseRecording();
+    } else if (data == 'resume') {
+      _resumeRecording();
     }
   }
 
@@ -74,7 +76,43 @@ class RecordingTaskHandler extends TaskHandler {
   void onNotificationButtonPressed(String id) {
     if (id == _stopButtonId) {
       _finishRecording();
+    } else if (id == _pauseButtonId) {
+      _pauseRecording();
+    } else if (id == _resumeButtonId) {
+      _resumeRecording();
     }
+  }
+
+  Future<void> _pauseRecording() async {
+    if (_isPaused) return;
+    await _recorder.pause();
+    _isPaused = true;
+    _updateNotification();
+    FlutterForegroundTask.sendDataToMain({'event': 'paused'});
+  }
+
+  Future<void> _resumeRecording() async {
+    if (!_isPaused) return;
+    await _recorder.resume();
+    _isPaused = false;
+    _updateNotification();
+    FlutterForegroundTask.sendDataToMain({'event': 'resumed'});
+  }
+
+  void _updateNotification() {
+    FlutterForegroundTask.updateService(
+      notificationTitle: _isPaused ? 'Recording paused' : 'Recording meeting',
+      notificationText: _isPaused
+          ? 'Tap Resume to continue recording'
+          : 'Tap Stop in the app or notification to finish',
+      notificationButtons: [
+        NotificationButton(
+          id: _isPaused ? _resumeButtonId : _pauseButtonId,
+          text: _isPaused ? 'Resume' : 'Pause',
+        ),
+        const NotificationButton(id: _stopButtonId, text: 'Stop'),
+      ],
+    );
   }
 
   Future<void> _finishRecording() async {
