@@ -18,11 +18,14 @@ class MeetingAudioController extends ChangeNotifier {
   bool _available = false;
   bool _isLocal = false;
 
+  double _speed = 1.0;
+
   bool get loading => _loading;
   String? get error => _error;
   bool get available => _available;
   bool get isLocal => _isLocal;
   bool get isPlaying => _player.playing;
+  double get speed => _speed;
   Duration get position => _player.position;
   Duration get duration => _player.duration ?? Duration.zero;
 
@@ -91,6 +94,13 @@ class MeetingAudioController extends ChangeNotifier {
     } else {
       await _player.play();
     }
+    notifyListeners();
+  }
+
+  Future<void> setSpeed(double speed) async {
+    if (!_initialized) return;
+    _speed = speed;
+    await _player.setSpeed(speed);
     notifyListeners();
   }
 

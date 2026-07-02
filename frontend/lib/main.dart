@@ -2,11 +2,20 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_overlay_window/flutter_overlay_window.dart';
 
+import 'overlay/recording_overlay.dart';
 import 'screens/auth_gate.dart';
 import 'services/auth_service.dart';
 import 'services/background_recording_service.dart';
 import 'theme/app_theme.dart';
+
+/// Entry point for the floating overlay isolate.
+@pragma('vm:entry-point')
+void overlayMain() {
+  WidgetsFlutterBinding.ensureInitialized();
+  runApp(const RecordingOverlayApp());
+}
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -29,6 +38,14 @@ Future<void> _initAppServices() async {
   } catch (e, stack) {
     debugPrint('BackgroundRecordingService init failed: $e\n$stack');
   }
+
+  // Listen for messages from the floating overlay (e.g. user taps Stop)
+  FlutterOverlayWindow.overlayListener.listen((data) async {
+    if (data == 'stop') {
+      await BackgroundRecordingService.instance.stop();
+      await FlutterOverlayWindow.closeOverlay();
+    }
+  });
 }
 
 class MyApp extends StatefulWidget {

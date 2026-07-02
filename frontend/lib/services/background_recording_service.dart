@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
+import 'package:flutter_overlay_window/flutter_overlay_window.dart';
 import 'package:record/record.dart';
 
 import 'recording_task_handler.dart';
@@ -132,6 +133,43 @@ class BackgroundRecordingService {
 
   bool get isPaused => _isPaused;
 
+  /// Requests "draw over other apps" permission if not already granted,
+  /// then shows the floating recording bubble.
+  Future<void> _showOverlay() async {
+    if (!Platform.isAndroid) return;
+    try {
+      final granted = await FlutterOverlayWindow.isPermissionGranted();
+      if (!granted) {
+        await FlutterOverlayWindow.requestPermission();
+      }
+      if (await FlutterOverlayWindow.isPermissionGranted()) {
+        await FlutterOverlayWindow.showOverlay(
+          height: 64,
+          width: WindowSize.matchParent,
+          alignment: OverlayAlignment.topCenter,
+          flag: OverlayFlag.defaultFlag,
+          overlayTitle: 'Recording',
+          overlayContent: 'Tap Stop to finish',
+          enableDrag: true,
+          positionGravity: PositionGravity.auto,
+        );
+        // Reset overlay timer
+        await FlutterOverlayWindow.shareData('reset');
+      }
+    } catch (_) {
+      // Overlay is optional — recording continues regardless
+    }
+  }
+
+  Future<void> _closeOverlay() async {
+    if (!Platform.isAndroid) return;
+    try {
+      if (await FlutterOverlayWindow.isActive()) {
+        await FlutterOverlayWindow.closeOverlay();
+      }
+    } catch (_) {}
+  }
+
   Future<void> start(String path) async {
     await _ensurePermissions();
     _startedAt = DateTime.now();
@@ -139,6 +177,14 @@ class BackgroundRecordingService {
     _isPaused = false;
 
     if (Platform.isAndroid) {
+      // Stop any stale service left over from a previous session
+      if (await FlutterForegroundTask.isRunningService) {
+        await FlutterForegroundTask.stopService();
+        await _closeOverlay();
+        // Brief pause so Android has time to unbind the old service
+        await Future<void>.delayed(const Duration(milliseconds: 400));
+      }
+
       final saved = await FlutterForegroundTask.saveData(
         key: recordingPathStorageKey,
         value: path,
@@ -156,6 +202,7 @@ class BackgroundRecordingService {
       if (result is ServiceRequestFailure) {
         throw Exception(result.error);
       }
+      await _showOverlay();
       return;
     }
 
@@ -177,6 +224,7 @@ class BackgroundRecordingService {
     _isPaused = false;
 
     if (Platform.isAndroid) {
+      await _closeOverlay();
       if (await FlutterForegroundTask.isRunningService) {
         _stopCompleter = Completer<String?>();
         FlutterForegroundTask.sendDataToTask('stop');
@@ -253,18 +301,22 @@ class BackgroundRecordingService {
 
   /// Clears stale recording state after returning from background.
   Future<void> resetAfterAppRestart() async {
-    if (!Platform.isIOS) return;
     _iosTimer?.cancel();
     _iosTimer = null;
     _startedAt = null;
     _pausedAt = null;
     _isPaused = false;
-    final recorder = _iosRecorder;
-    if (recorder == null) return;
-    try {
-      if (await recorder.isRecording()) {
-        await recorder.stop();
-      }
-    } catch (_) {}
+
+    if (Platform.isIOS) {
+      final recorder = _iosRecorder;
+      if (recorder == null) return;
+      try {
+        if (await recorder.isRecording()) {
+          await recorder.stop();
+        }
+      } catch (_) {}
+    }
+    // On Android: don't auto-stop the service — user may have intentionally
+    // backgrounded the app while recording. The notification Stop button handles it.
   }
 }

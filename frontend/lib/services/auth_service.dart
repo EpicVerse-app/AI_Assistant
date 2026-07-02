@@ -96,6 +96,37 @@ class AuthService extends ChangeNotifier {
     );
   }
 
+  Future<AuthUser> updateProfile({
+    String? fullName,
+    String? email,
+    String? currentPassword,
+    String? newPassword,
+  }) async {
+    final uri = Uri.parse('${ApiService.baseUrl}/auth/profile');
+    final body = <String, dynamic>{};
+    if (fullName != null) body['full_name'] = fullName;
+    if (email != null) body['email'] = email;
+    if (currentPassword != null) body['current_password'] = currentPassword;
+    if (newPassword != null) body['new_password'] = newPassword;
+
+    final response = await http.patch(
+      uri,
+      headers: {
+        'Content-Type': 'application/json',
+        ...authorizationHeaders(),
+      },
+      body: jsonEncode(body),
+    );
+
+    if (response.statusCode != 200) {
+      throw _authError(response);
+    }
+
+    return _persistSession(
+      jsonDecode(response.body) as Map<String, dynamic>,
+    );
+  }
+
   Future<void> logout() async {
     _token = null;
     _user = null;

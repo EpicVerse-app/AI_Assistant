@@ -114,3 +114,73 @@ def login(request: Request, body: LoginRequest, db: Session = Depends(get_db)):
 @router.get("/me", response_model=UserResponse)
 def me(current_user: User = Depends(get_current_user)):
     return _user_response(current_user)
+
+
+class UpdateProfileRequest(BaseModel):
+    full_name: str | None = Field(None, min_length=1, max_length=255)
+    email: str | None = Field(None, min_length=3, max_length=255)
+    current_password: str | None = Field(None, min_length=1, max_length=128)
+    new_password: str | None = Field(None, min_length=8, max_length=128)
+
+    @field_validator("email")
+    @classmethod
+    def check_email(cls, value: str | None) -> str | None:
+        if value is None:
+            return value
+        return validate_email(value)
+
+    @field_validator("full_name")
+    @classmethod
+    def check_full_name(cls, value: str | None) -> str | None:
+        if value is None:
+            return value
+        return validate_full_name(value)
+
+    @field_validator("new_password")
+    @classmethod
+    def check_new_password(cls, value: str | None) -> str | None:
+        if value is None:
+            return value
+        return validate_password_register(value)
+
+
+@router.patch("/profile", response_model=AuthResponse)
+def update_profile(
+    body: UpdateProfileRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    # If changing password, require current_password and verify it
+    if body.new_password is not None:
+        if not body.current_password:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Current password is required to set a new password.",
+            )
+        if not verify_password(body.current_password, current_user.password_hash):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Current password is incorrect.",
+            )
+        current_user.password_hash = hash_password(body.new_password)
+
+    # If changing email, check it's not already taken
+    if body.email is not None and body.email != current_user.email:
+        if db.query(User).filter(User.email == body.email).first():
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="An account with this email already exists.",
+            )
+        current_user.email = body.email
+
+    if body.full_name is not None:
+        current_user.full_name = body.full_name
+
+    db.commit()
+    db.refresh(current_user)
+
+    # Issue a fresh token (email may have changed)
+    token = create_access_token(
+        user_id=current_user.user_id, email=current_user.email
+    )
+    return AuthResponse(access_token=token, user=_user_response(current_user))

@@ -179,7 +179,9 @@ class _AudioCard extends StatelessWidget {
           ],
           const SizedBox(height: 20),
           _PlaybackControls(controller: controller),
-          const SizedBox(height: 16),
+          const SizedBox(height: 12),
+          _SpeedSelector(controller: controller),
+          const SizedBox(height: 12),
           const _WaveformBars(),
         ],
       ),
@@ -254,6 +256,66 @@ class _PlaybackControls extends StatelessWidget {
             ),
           ],
         ),
+      ],
+    );
+  }
+}
+
+class _SpeedSelector extends StatelessWidget {
+  const _SpeedSelector({required this.controller});
+
+  final MeetingAudioController controller;
+
+  static const _speeds = [1.0, 1.25, 1.5, 1.75, 2.0];
+
+  String _label(double s) => s == s.truncateToDouble() ? '${s.toInt()}x' : '${s}x';
+
+  @override
+  Widget build(BuildContext context) {
+    final current = controller.speed;
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        const Text(
+          'Speed',
+          style: TextStyle(fontSize: 12, color: AppTheme.secondaryGray),
+        ),
+        const SizedBox(width: 10),
+        ..._speeds.map((s) {
+          final selected = (current - s).abs() < 0.01;
+          return GestureDetector(
+            onTap: () => controller.setSpeed(s),
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 180),
+              margin: const EdgeInsets.symmetric(horizontal: 3),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+              decoration: BoxDecoration(
+                gradient: selected
+                    ? const LinearGradient(
+                        colors: [Color(0xFF8D6736), Color(0xFFB18850)],
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                      )
+                    : null,
+                color: selected ? null : AppTheme.fillGray,
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(
+                  color: selected
+                      ? const Color(0xFF8D6736)
+                      : AppTheme.borderGray,
+                ),
+              ),
+              child: Text(
+                _label(s),
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: selected ? Colors.white : AppTheme.secondaryGray,
+                ),
+              ),
+            ),
+          );
+        }),
       ],
     );
   }
